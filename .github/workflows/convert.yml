@@ -50,7 +50,7 @@ jobs:
           channel="${INPUT_CHANNEL:-$DEFAULT_CHANNEL}"
           case "$channel" in stable|candidate) ;; *) echo "unsupported channel: $channel" >&2; exit 2 ;; esac
           inspect=$(docker buildx imagetools inspect "$IMAGE:$channel" --format '{{json .}}')
-          digest=$(jq -r '.Manifest.Digest' <<<"$inspect")
+          digest=$(jq -r '.Manifest.Digest // .manifest.digest // empty' <<<"$inspect")
           if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "could not resolve digest for $IMAGE:$channel" >&2
             echo "$inspect" >&2
