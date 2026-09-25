@@ -233,7 +233,7 @@ jobs:
           git commit -s -m "🌱 tap: generate ${CHANNEL} contribute formula" \
             -m "Image digest: ${DIGEST}" \
             -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
-          git push --force-with-lease origin "$branch"
+          git push --force origin "$branch"
           if [ "$CHANNEL" = stable ]; then
             formula=contribute
             title="✨ tap: generated contribute formula ${TAG}"
