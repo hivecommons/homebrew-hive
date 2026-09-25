@@ -166,9 +166,14 @@ jobs:
         run: |
           set -euo pipefail
           notes="Hive contributor ${CHANNEL} converted to Apptainer SIF.\n\nImage: ${IMAGE_REF}\nDigest: ${DIGEST}"
-          gh release create "$TAG" dist/*.sif dist/*.sha256 \
-            --title "$TAG" \
-            --notes "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.sif dist/*.sha256 --clobber
+            gh release edit "$TAG" --title "$TAG" --notes "$notes"
+          else
+            gh release create "$TAG" dist/*.sif dist/*.sha256 \
+              --title "$TAG" \
+              --notes "$notes"
+          fi
           echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Generate formula
