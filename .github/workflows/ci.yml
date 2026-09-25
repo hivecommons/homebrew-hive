@@ -1,0 +1,39 @@
+name: Tap CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate generated formulae
+        run: |
+          set -euo pipefail
+          if ls Formula/*.rb >/dev/null 2>&1; then
+            brew tap hivecommons/hive "$PWD"
+            ruby -c Formula/*.rb
+            brew style Formula/*.rb
+            for formula_path in Formula/*.rb; do
+              formula_name=$(basename "$formula_path" .rb)
+              brew audit --strict --new "hivecommons/hive/${formula_name}"
+            done
+          else
+            echo "No generated formulae yet."
+          fi
+
+      - name: Install and test contribute formula when present
+        if: ${{ hashFiles('Formula/contribute.rb') != '' }}
+        run: |
+          set -euo pipefail
+          brew install --build-from-source hivecommons/hive/contribute
+          brew test hivecommons/hive/contribute
