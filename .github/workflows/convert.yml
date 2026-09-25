@@ -1,0 +1,245 @@
+name: Convert Hive contributor image
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Image channel to convert
+        type: choice
+        options: [stable, candidate]
+        default: stable
+      force:
+        description: Rebuild and republish even if the release already exists
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [hive-contributor-promoted, promote-stable]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: convert-hive-contributor-${{ github.event.inputs.channel || github.event.client_payload.channel || 'stable' }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/hivecommons/hive-contributor
+  DEFAULT_CHANNEL: stable
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      digest: ${{ steps.meta.outputs.digest }}
+      short: ${{ steps.meta.outputs.short }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+      exists: ${{ steps.exists.outputs.exists }}
+    steps:
+      - name: Resolve channel digest
+        id: meta
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel || github.event.client_payload.channel || '' }}
+        run: |
+          set -euo pipefail
+          channel="${INPUT_CHANNEL:-$DEFAULT_CHANNEL}"
+          case "$channel" in stable|candidate) ;; *) echo "unsupported channel: $channel" >&2; exit 2 ;; esac
+          inspect=$(docker buildx imagetools inspect "$IMAGE:$channel" --format '{{json .}}')
+          digest=$(jq -r '.Manifest.Digest' <<<"$inspect")
+          if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "could not resolve digest for $IMAGE:$channel" >&2
+            echo "$inspect" >&2
+            exit 1
+          fi
+          short="${digest#sha256:}"
+          short="${short:0:12}"
+          if [ "$channel" = stable ]; then
+            tag="contribute-${short}"
+            version="${short}"
+          else
+            tag="contribute-candidate-${short}"
+            version="candidate-${short}"
+          fi
+          {
+            echo "channel=$channel"
+            echo "digest=$digest"
+            echo "short=$short"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "image_ref=$IMAGE@$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE" != "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.exists != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Install Apptainer
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common squashfs-tools
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+          apptainer --version
+
+      - name: Build SIF from pinned image digest
+        env:
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          asset="hive-contributor-${ARCH}.sif"
+          apptainer build "$asset" "docker://$IMAGE_REF"
+          bytes=$(stat -c '%s' "$asset")
+          limit=$((2 * 1024 * 1024 * 1024))
+          if [ "$bytes" -ge "$limit" ]; then
+            echo "::error::$asset is $bytes bytes, exceeding GitHub's 2GB release asset limit"
+            exit 1
+          fi
+          sha256sum "$asset" > "$asset.sha256"
+          cat "$asset.sha256"
+
+      - name: Upload SIF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hive-contributor-${{ matrix.arch }}
+          path: |
+            hive-contributor-${{ matrix.arch }}.sif
+            hive-contributor-${{ matrix.arch }}.sif.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [resolve, build]
+    if: needs.resolve.outputs.exists != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download SIF artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release assets
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          notes="Hive contributor ${CHANNEL} converted to Apptainer SIF.\n\nImage: ${IMAGE_REF}\nDigest: ${DIGEST}"
+          gh release create "$TAG" dist/*.sif dist/*.sha256 \
+            --title "$TAG" \
+            --notes "$notes"
+          echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate formula
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          amd_sha=$(cut -d' ' -f1 dist/hive-contributor-amd64.sif.sha256)
+          arm_sha=$(cut -d' ' -f1 dist/hive-contributor-arm64.sif.sha256)
+          if [ "$CHANNEL" = stable ]; then
+            formula=contribute
+            binary=hive-contribute
+          else
+            formula=contribute-candidate
+            binary=hive-contribute-candidate
+          fi
+          ./scripts/generate-formula.py \
+            --formula "$formula" \
+            --binary "$binary" \
+            --channel "$CHANNEL" \
+            --version "$VERSION" \
+            --digest "$DIGEST" \
+            --image-ref "$IMAGE_REF" \
+            --amd64-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/hive-contributor-amd64.sif" \
+            --amd64-sha256 "$amd_sha" \
+            --arm64-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/hive-contributor-arm64.sif" \
+            --arm64-sha256 "$arm_sha" \
+            --output "Formula/${formula}.rb"
+
+      - name: Smoke generated wrapper syntax
+        run: |
+          set -euo pipefail
+          ruby -c Formula/*.rb
+          grep -R -- "--wrapper-version" Formula/*.rb
+
+      - name: Commit generated formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula; then
+            echo "Formula already up to date."
+            exit 0
+          fi
+          branch="generated/${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add Formula
+          git commit -s -m "🌱 tap: generate ${CHANNEL} contribute formula" \
+            -m "Image digest: ${DIGEST}" \
+            -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          git push --force-with-lease origin "$branch"
+          if [ "$CHANNEL" = stable ]; then
+            formula=contribute
+            title="✨ tap: generated contribute formula ${TAG}"
+          else
+            formula=contribute-candidate
+            title="✨ tap: generated contribute-candidate formula ${TAG}"
+          fi
+          body="Generated Formula/${formula}.rb for ${TAG}.\n\nImage digest: ${DIGEST}\nRelease: ${{ steps.release.outputs.url }}"
+          existing=$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body "$body"
+          else
+            gh pr create --head "$branch" --base main --title "$title" --body "$body"
+          fi
