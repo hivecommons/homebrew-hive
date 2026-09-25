@@ -46,4 +46,5 @@ jobs:
         run: |
           set -euo pipefail
           brew install --build-from-source hivecommons/hive/contribute
+          hive-contribute --help
           brew test hivecommons/hive/contribute
