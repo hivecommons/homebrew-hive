@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "8d0610f72958"
+  version "726f8c08a810"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-8d0610f72958/hive-contributor-arm64.sif"
-    sha256 "050c22ee12af88bb048808aba8b9cff14027fc37bf0ffb656b8439f63a7fb252"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-726f8c08a810/hive-contributor-arm64.sif"
+    sha256 "b1739d6f81559bada854e9421913b2b1478b617e8e49f930201b6586bf79c94f"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-8d0610f72958/hive-contributor-amd64.sif"
-    sha256 "51d1c01d6425baf8950da5caad0b663f9e1d838ec876ce11884c96db59579c7c"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-726f8c08a810/hive-contributor-amd64.sif"
+    sha256 "08edc5dc4a1d5a1d630af3a9bb4dcdd7123b9d051dcfc3d84379c047cc919606"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="8d0610f72958"
+      WRAPPER_VERSION="726f8c08a810"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3"
-      IMAGE_DIGEST="sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:726f8c08a8108808def19620d271539eb77fe7c2e7f9ac30b4642a939236a380"
+      IMAGE_DIGEST="sha256:726f8c08a8108808def19620d271539eb77fe7c2e7f9ac30b4642a939236a380"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
 
       usage() {
@@ -189,7 +189,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3
+        ghcr.io/hivecommons/hive-contributor@sha256:726f8c08a8108808def19620d271539eb77fe7c2e7f9ac30b4642a939236a380
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -204,7 +204,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 8d0610f72958",
+      "hive-contribute 726f8c08a810",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
   end
