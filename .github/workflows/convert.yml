@@ -17,9 +17,7 @@ on:
   repository_dispatch:
     types: [hive-contributor-promoted, promote-stable]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: convert-hive-contributor-${{ github.event.inputs.channel || github.event.client_payload.channel || 'stable' }}
@@ -32,6 +30,8 @@ env:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       digest: ${{ steps.meta.outputs.digest }}
@@ -92,6 +92,7 @@ jobs:
   build:
     needs: resolve
     if: needs.resolve.outputs.exists != 'true'
+    permissions: {}
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +146,9 @@ jobs:
     needs: [resolve, build]
     if: needs.resolve.outputs.exists != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
