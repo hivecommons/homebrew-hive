@@ -103,6 +103,17 @@ repository dispatch from upstream promotion automation. It:
 The workflow pins third-party GitHub Actions by full commit SHA and uses only
 `contents: write` / `pull-requests: write` permissions.
 
+## Testing the generator
+
+`scripts/test_generate_formula.py` renders the formula with fixed inputs and
+runs the embedded `hive-contribute` wrapper against stub `apptainer`, `docker`
+and `podman` binaries. It needs only Python 3 (the `ruby -c` case is skipped
+when Ruby is absent):
+
+```sh
+python3 -m unittest discover -s scripts -p 'test_*.py' -v
+```
+
 ## Installing before a generated release lands
 
 Use the from-source flow documented in the [hive README][hive] (`just
