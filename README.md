@@ -114,6 +114,11 @@ when Ruby is absent):
 python3 -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
+## Rollback
+
+If a generated formula installs a bad image, follow
+[`runbooks/rollback.md`](runbooks/rollback.md).
+
 ## Installing before a generated release lands
 
 Use the from-source flow documented in the [hive README][hive] (`just
