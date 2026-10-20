@@ -225,7 +225,14 @@ jobs:
             echo "Formula already up to date."
             exit 0
           fi
-          branch="generated/${TAG}"
+          # One long-lived branch per channel: each run force-pushes the newest
+          # formula onto it and edits the existing PR instead of opening a new
+          # PR per tag, which left one unmerged PR behind every 6-hour run.
+          if [ "$CHANNEL" = stable ]; then
+            branch="generated/contribute"
+          else
+            branch="generated/contribute-candidate"
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
@@ -246,5 +253,14 @@ jobs:
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "$title" --body "$body"
           else
-            gh pr create --head "$branch" --base main --title "$title" --body "$body"
+            existing=$(gh pr create --head "$branch" --base main --title "$title" --body "$body" | grep -oE '[0-9]+$')
           fi
+          # Retire per-tag PRs from earlier runs of this channel; the branch
+          # above now carries their content.
+          gh pr list --state open --json number,headRefName \
+            --jq ".[] | select(.headRefName | startswith(\"generated/${formula}-\")) | .number" |
+          while read -r stale; do
+            [ "$stale" = "$existing" ] && continue
+            gh pr close "$stale" --delete-branch \
+              --comment "Superseded by #${existing}: the ${CHANNEL} formula now tracks a single branch (\`${branch}\`)."
+          done
