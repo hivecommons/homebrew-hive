@@ -125,10 +125,13 @@ class {klass} < Formula
       apptainer_run() {{
         command -v apptainer >/dev/null 2>&1 || {{ echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }}
         local -a args=(run --containall --writable-tmpfs --pwd /home/dev)
+        # Hand values over through APPTAINERENV_* (honoured under --containall)
+        # rather than `--env NAME=VALUE`, which would expose every forwarded
+        # token in the apptainer process's argv (/proc/<pid>/cmdline).
         while IFS= read -r name; do
-          args+=(--env "$name=${{!name}}")
+          export "APPTAINERENV_${{name}}=${{!name}}"
         done < <(collect_env_names)
-        args+=(--env "HIVE_CONTAINER_RUNTIME=apptainer")
+        export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
         args+=(--bind "$workspace:$container_workspace")
         args+=(--bind "$config_dir:$container_config")
         args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
