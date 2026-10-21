@@ -336,6 +336,46 @@ class WrapperTests(unittest.TestCase):
                         "home/.local/state/hive/contribute/metrics"):
             self.assertTrue((self.tmp / created).is_dir(), created)
 
+    def test_home_workspace_is_refused_by_default(self):
+        self.add_stub("apptainer")
+        for ws in (str(self.home), str(self.home) + "/", str(self.tmp), "/"):
+            proc = self.run_wrapper(
+                env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": ws},
+            )
+            self.assertEqual(proc.returncode, 2, ws)
+            self.assertIn("refusing to use", proc.stderr, ws)
+            self.assertFalse(self.stub_out.exists(), f"runtime must not start for {ws}")
+        # $PWD is the default workspace, so running from $HOME is the same case.
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": ""}, cwd=self.home)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertFalse(self.stub_out.exists())
+
+    def test_home_workspace_override_and_sibling_dirs_are_allowed(self):
+        self.add_stub("apptainer")
+        proc = self.run_wrapper(
+            env={
+                "HIVE_CONTRIBUTE_RUNTIME": "apptainer",
+                "HIVE_WORKSPACE_DIR": str(self.home),
+                "HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE": "1",
+            },
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertIn(f"{self.home}:/home/dev/workspace", argv)
+
+        # A directory inside $HOME, or one that merely shares a prefix, is fine.
+        for ws in (self.home / "project", Path(str(self.home) + "-other")):
+            self.stub_out.unlink()
+            proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": str(ws)})
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            argv, _ = self.stub_record()
+            self.assertIn(f"{ws}:/home/dev/workspace", argv)
+
+    def test_print_runtime_works_from_home(self):
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_WORKSPACE_DIR": str(self.home)})
+        self.assertIn(proc.returncode, (0, 1), proc.stderr)
+        self.assertNotIn("refusing to use", proc.stderr)
+
     def test_apptainer_ssh_and_gh_mounts_are_opt_in(self):
         self.add_stub("apptainer")
         (self.home / ".config" / "gh").mkdir(parents=True)

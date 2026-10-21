@@ -28,6 +28,10 @@
       uses HTTPS with the forwarded GH_TOKEN (or GITHUB_TOKEN); without one,
       authenticated clones and pushes fail. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
       (read-only ~/.ssh) and/or HIVE_CONTRIBUTE_MOUNT_GH=1 (~/.config/gh).
+
+      The workspace (HIVE_WORKSPACE_DIR, default: the current directory) is bound
+      read-write. The wrapper refuses a workspace that is or contains your home
+      directory; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override.
       USAGE
       }
 
@@ -49,6 +53,16 @@
       state_dir="${HIVE_CONTRIBUTE_STATE_DIR:-$HOME/.local/state/hive/contribute}"
       container_workspace="/home/dev/workspace"
       container_config="/home/dev/.config/hive"
+      case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
+
+      # The workspace is bound read-write. Binding $HOME itself, an ancestor
+      # of it, or / would hand the container every credential directory the
+      # wrapper deliberately leaves unmounted (~/.ssh, ~/.config/gh, ~/.aws, …),
+      # so refuse unless the caller opts in explicitly.
+      workspace_exposes_home() {
+        local ws="${1%/}" home="${HOME%/}"
+        [[ -z "$ws" || "$ws" == "$home" || "$home/" == "$ws/"* ]]
+      }
       mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
@@ -213,6 +227,10 @@
         exit 1
       fi
 
+      if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
+        echo "@BINARY@: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2
+        exit 2
+      fi
       warn_if_no_git_auth
 
       case "$requested_runtime" in
