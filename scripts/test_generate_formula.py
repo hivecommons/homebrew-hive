@@ -573,6 +573,124 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertIn("HIVE_CONTAINER_RUNTIME=podman", argv)
 
+    # Backend credential directories under $HOME that the wrapper binds when
+    # present, and the container path each one lands on.
+    BACKEND_DIRS = {
+        ".claude": "/home/dev/.claude",
+        ".claude.json": "/home/dev/.claude.json",
+        ".copilot": "/home/dev/.copilot",
+        ".codex": "/home/dev/.codex",
+        ".config/goose": "/home/dev/.config/goose",
+        ".config/muse": "/home/dev/.config/muse",
+        ".bob": "/home/dev/.bob",
+    }
+
+    def mounts(self, argv, flag):
+        return [argv[i + 1] for i, a in enumerate(argv) if a == flag]
+
+    def test_backend_credential_dirs_are_bound_only_when_present(self):
+        for engine, flag in (("apptainer", "--bind"), ("docker", "-v")):
+            with self.subTest(engine=engine, present=False):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                binds = self.mounts(self.stub_record()[0], flag)
+                for host in self.BACKEND_DIRS:
+                    self.assertFalse(any(b.startswith(f"{self.home}/{host}:") for b in binds), (host, binds))
+
+        for host in self.BACKEND_DIRS:
+            target = self.home / host
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if host.endswith(".json"):
+                target.write_text("{}\n")
+            else:
+                target.mkdir()
+        for engine, flag in (("apptainer", "--bind"), ("docker", "-v")):
+            with self.subTest(engine=engine, present=True):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                binds = self.mounts(self.stub_record()[0], flag)
+                for host, container in self.BACKEND_DIRS.items():
+                    self.assertIn(f"{self.home}/{host}:{container}", binds)
+                # Only ~/.gitconfig and the opt-in ~/.ssh are read-only; backend
+                # CLIs write refresh tokens back to their directories.
+                self.assertFalse(any(b.endswith(":ro") for b in binds), binds)
+
+    def test_codex_home_override_replaces_default_codex_bind(self):
+        custom = self.tmp / "codex-profile"
+        custom.mkdir()
+        (self.home / ".codex").mkdir()
+        for engine, flag in (("apptainer", "--bind"), ("docker", "-v")):
+            with self.subTest(engine=engine):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, "CODEX_HOME": str(custom)})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                binds = self.mounts(self.stub_record()[0], flag)
+                self.assertIn(f"{custom}:/home/dev/.codex", binds)
+                self.assertFalse(any(b.startswith(f"{self.home}/.codex:") for b in binds), binds)
+
+        # An override pointing at a directory that does not exist is skipped,
+        # and the default ~/.codex is not silently used in its place.
+        self.add_stub("apptainer")
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "CODEX_HOME": str(self.tmp / "absent")})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        binds = self.mounts(self.stub_record()[0], "--bind")
+        self.assertFalse(any(":/home/dev/.codex" in b for b in binds), binds)
+
+    def test_config_and_state_dir_overrides_are_created_and_bound(self):
+        config = self.tmp / "profile" / "config"
+        state = self.tmp / "profile" / "state"
+        override = {
+            "HIVE_CONTRIBUTOR_CONFIG_DIR": str(config),
+            "HIVE_CONTRIBUTE_STATE_DIR": str(state),
+        }
+        expected = {
+            f"{config}:/home/dev/.config/hive",
+            f"{state}/home:/home/dev/.local/state/hive",
+            f"{state}/metrics:/var/run/hive-metrics",
+        }
+        for engine, flag in (("apptainer", "--bind"), ("docker", "-v")):
+            with self.subTest(engine=engine):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, **override})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                binds = self.mounts(self.stub_record()[0], flag)
+                self.assertTrue(expected <= set(binds), binds)
+                self.assertFalse(any(b.startswith(f"{self.home}/.config/hive:") for b in binds), binds)
+                self.assertFalse(any(b.startswith(f"{self.home}/.local/state/") for b in binds), binds)
+        for created in (config, state / "home", state / "metrics"):
+            self.assertTrue(created.is_dir(), created)
+        self.assertFalse((self.home / ".config" / "hive").exists(), "default config dir must not be created")
+        self.assertFalse((self.home / ".local").exists(), "default state dir must not be created")
+
+        # Lima parks the forwarded-environment file in the overridden state dir
+        # (the README says the override must be shared into the VM), not the default.
+        self.add_lima_stub()
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima", "GH_TOKEN": "t", **override})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertTrue(argv[6].startswith(f"{state}/lima-env."), argv[6])
+        self.assertTrue(expected <= set(self.mounts(argv, "--bind")), argv)
+        self.assertEqual(sorted(state.glob("lima-env.*")), [], "host must remove the token file")
+        self.assertFalse((self.home / ".local").exists())
+
+    def test_container_name_defaults_and_honours_override(self):
+        for engine in ("docker", "podman"):
+            with self.subTest(engine=engine, override=False):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv, _ = self.stub_record()
+                self.assertEqual(argv[:4], ["run", "--rm", "-it", "--name"])
+                self.assertEqual(argv[4], "hive-contributor")
+            with self.subTest(engine=engine, override=True):
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, "HIVE_CONTAINER_NAME": "relay-two"})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv, _ = self.stub_record()
+                self.assertEqual(argv[:5], ["run", "--rm", "-it", "--name", "relay-two"])
+                self.assertEqual(argv.count("--name"), 1)
+
     # limactl stub: `list` always succeeds; `shell` snapshots the env file
     # (mode preserved) before the wrapper removes it on the host, then exits
     # with STUB_EXIT.
