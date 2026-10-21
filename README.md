@@ -100,6 +100,38 @@ The wrapper forwards the inputs the contributor relay needs:
 - Workspace: `${HIVE_WORKSPACE_DIR:-$PWD}` is bound to `/home/dev/workspace` and
   exported as `HIVE_WORKSPACE_DIR` inside the container.
 
+## Persistent state and wrapper flags
+
+The wrapper creates these host directories as needed and mounts them read-write
+across container runs (Apptainer, Docker/Podman, and Lima):
+
+| Host override | Default | Container path |
+|---|---|---|
+| `HIVE_CONTRIBUTOR_CONFIG_DIR` | `~/.config/hive` | `/home/dev/.config/hive` |
+| `HIVE_CONTRIBUTE_STATE_DIR` | `~/.local/state/hive/contribute` | `home/` → `/home/dev/.local/state/hive`; `metrics/` → `/var/run/hive-metrics` |
+
+For example, to keep a separate contributor profile:
+
+```sh
+HIVE_CONTRIBUTOR_CONFIG_DIR="$HOME/.config/hive-profile" \
+HIVE_CONTRIBUTE_STATE_DIR="$HOME/.local/state/hive/profile" \
+hive-contribute
+```
+
+For Lima, these paths must also be shared into the VM at the same path and be
+writable. Lima temporarily stores a mode-0600 `lima-env.*` file containing the
+forwarded environment in the state directory and removes it when `limactl` exits.
+
+These diagnostic flags do not launch the relay; pass each as the first argument:
+
+- `hive-contribute --wrapper-version` prints the wrapper version, channel, and
+  pinned image reference, then exits.
+- `hive-contribute --wrapper-print-runtime` prints the selected runtime, or
+  `none` with exit status 1 when none is found. This is a selection diagnostic,
+  not a runtime health check: Linux's automatic selection reports `apptainer`
+  without checking that it is installed. It still creates the directories above.
+- `hive-contribute --help` (or `-h`) prints wrapper usage.
+
 ## Automation
 
 `.github/workflows/convert.yml` runs every six hours, on manual dispatch, and on
