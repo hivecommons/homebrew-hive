@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+WRAPPER_TEMPLATE = Path(__file__).with_name("contribute-wrapper.sh.in")
+
 
 def ruby_quote(value: str) -> str:
     return value.replace('\\', '\\\\').replace('"', '\\"')
@@ -12,6 +14,22 @@ def ruby_quote(value: str) -> str:
 
 def class_name(formula: str) -> str:
     return ''.join(part.capitalize() for part in formula.replace('_', '-').split('-'))
+
+
+def render_wrapper(args: argparse.Namespace, sif: str, caveat_channel: str) -> str:
+    values = {
+        "@VERSION@": ruby_quote(args.version),
+        "@CHANNEL@": ruby_quote(args.channel),
+        "@IMAGE_REF@": ruby_quote(args.image_ref),
+        "@DIGEST@": ruby_quote(args.digest),
+        "@SIF@": sif,
+        "@BINARY@": args.binary,
+        "@CAVEAT_CHANNEL@": caveat_channel,
+    }
+    text = WRAPPER_TEMPLATE.read_text(encoding="utf-8")
+    for key, value in values.items():
+        text = text.replace(key, value)
+    return text
 
 
 def render(args: argparse.Namespace) -> str:
@@ -45,170 +63,7 @@ class {klass} < Formula
   def install
     libexec.install Dir["*.sif"].first => "{sif}"
     (bin/"{binary}").write <<~SH
-      #!/usr/bin/env bash
-      set -euo pipefail
-
-      WRAPPER_VERSION="{ruby_quote(args.version)}"
-      CHANNEL="{ruby_quote(args.channel)}"
-      IMAGE_REF="{ruby_quote(args.image_ref)}"
-      IMAGE_DIGEST="{ruby_quote(args.digest)}"
-      SIF_PATH=\"#{{libexec}}/{sif}\"
-
-      usage() {{
-        cat <<USAGE
-      {binary} - run the Hive contributor relay ({caveat_channel} channel)
-
-      Usage: {binary} [--wrapper-version] [--wrapper-print-runtime] [--help] [relay args...]
-
-      Runtime selection:
-        Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
-        macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
-
-      Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
-      AGENT_BACKEND, AGENT_MODEL, AGENT_REASONING_EFFORT, CONTRIBUTOR_MODE,
-      HIVE_WORKSPACE_DIR, GH_TOKEN, backend provider API keys, and CLI credential dirs.
-      USAGE
-      }}
-
-      case "${{1:-}}" in
-        --wrapper-version)
-          echo "{binary} $WRAPPER_VERSION channel=$CHANNEL image=$IMAGE_REF"
-          exit 0
-          ;;
-        --help|-h)
-          usage
-          exit 0
-          ;;
-      esac
-
-      host_os=$(uname -s | tr '[:upper:]' '[:lower:]')
-      requested_runtime="${{HIVE_CONTRIBUTE_RUNTIME:-auto}}"
-      workspace="${{HIVE_WORKSPACE_DIR:-$PWD}}"
-      config_dir="${{HIVE_CONTRIBUTOR_CONFIG_DIR:-$HOME/.config/hive}}"
-      state_dir="${{HIVE_CONTRIBUTE_STATE_DIR:-$HOME/.local/state/hive/contribute}}"
-      container_workspace="/home/dev/workspace"
-      container_config="/home/dev/.config/hive"
-      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
-
-      export HIVE_WORKSPACE_DIR="$container_workspace"
-      if [[ -z "${{GH_TOKEN:-}}" && -n "${{GITHUB_TOKEN:-}}" ]]; then
-        export GH_TOKEN="$GITHUB_TOKEN"
-      fi
-
-      env_name_allowed() {{
-        case "$1" in
-          HIVE_*|AGENT_*|CONTRIBUTOR_MODE|GH_TOKEN|GITHUB_TOKEN|GITHUB_REPOSITORY|GITHUB_ACTOR|GIT_AUTHOR_*|GIT_COMMITTER_*)
-            return 0 ;;
-          ANTHROPIC_*|CLAUDE_*|OPENAI_*|CODEX_*|COPILOT_*|BOBSHELL_*|GOOSE_*|META_API_KEY|MUSE_*)
-            return 0 ;;
-          OMP_*|PI_*|KILO_*|GEMINI_*|GOOGLE_*|ANTIGRAVITY_*|AWS_*|AZURE_*|OLLAMA_*|LITELLM_*|XAI_*|GROQ_*)
-            return 0 ;;
-          *) return 1 ;;
-        esac
-      }}
-
-      collect_env_names() {{
-        env | while IFS='=' read -r name _; do
-          env_name_allowed "$name" && printf '%s\\n' "$name"
-        done | sort -u
-      }}
-
-      add_existing_bind() {{
-        local src="$1" dst="$2" mode="${{3:-rw}}"
-        [[ -e "$src" ]] || return 0
-        case "$mode" in
-          ro) printf '%s:%s:ro\\n' "$src" "$dst" ;;
-          *) printf '%s:%s\\n' "$src" "$dst" ;;
-        esac
-      }}
-
-      apptainer_run() {{
-        command -v apptainer >/dev/null 2>&1 || {{ echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }}
-        local -a args=(run --containall --writable-tmpfs --pwd /home/dev)
-        # Hand values over through APPTAINERENV_* (honoured under --containall)
-        # rather than `--env NAME=VALUE`, which would expose every forwarded
-        # token in the apptainer process's argv (/proc/<pid>/cmdline).
-        while IFS= read -r name; do
-          export "APPTAINERENV_${{name}}=${{!name}}"
-        done < <(collect_env_names)
-        export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
-        args+=(--bind "$workspace:$container_workspace")
-        args+=(--bind "$config_dir:$container_config")
-        args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
-        args+=(--bind "$state_dir/metrics:/var/run/hive-metrics")
-        while IFS= read -r bind; do args+=(--bind "$bind"); done < <(
-          add_existing_bind "$HOME/.claude" "/home/dev/.claude"
-          add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
-          add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
-          add_existing_bind "${{CODEX_HOME:-$HOME/.codex}}" "/home/dev/.codex"
-          add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
-          add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
-          add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
-          add_existing_bind "$HOME/.bob" "/home/dev/.bob"
-          add_existing_bind "$HOME/.gitconfig" "/home/dev/.gitconfig" ro
-          add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
-        )
-        exec apptainer "${{args[@]}}" "$SIF_PATH" "$@"
-      }}
-
-      docker_like_run() {{
-        local engine="$1"
-        local -a args=(run --rm -it --name "${{HIVE_CONTAINER_NAME:-hive-contributor}}")
-        if [[ "$engine" == "docker" && "${{HIVE_CONTRIBUTE_RUNTIME:-}}" == "gvisor" ]]; then
-          args+=(--runtime=runsc)
-        elif [[ "$engine" == "podman" && "${{HIVE_CONTRIBUTE_RUNTIME:-}}" == "gvisor" ]]; then
-          args+=(--runtime=runsc)
-        fi
-        while IFS= read -r name; do args+=(-e "$name"); done < <(collect_env_names)
-        args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
-        args+=(-v "$workspace:$container_workspace")
-        args+=(-v "$config_dir:$container_config")
-        args+=(-v "$state_dir/home:/home/dev/.local/state/hive")
-        args+=(-v "$state_dir/metrics:/var/run/hive-metrics")
-        [[ -e "$HOME/.claude" ]] && args+=(-v "$HOME/.claude:/home/dev/.claude")
-        [[ -e "$HOME/.claude.json" ]] && args+=(-v "$HOME/.claude.json:/home/dev/.claude.json")
-        [[ -e "$HOME/.copilot" ]] && args+=(-v "$HOME/.copilot:/home/dev/.copilot")
-        [[ -e "${{CODEX_HOME:-$HOME/.codex}}" ]] && args+=(-v "${{CODEX_HOME:-$HOME/.codex}}:/home/dev/.codex")
-        [[ -e "$HOME/.config/gh" ]] && args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
-        [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
-        [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
-        [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
-        [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
-        [[ -e "$HOME/.ssh" ]] && args+=(-v "$HOME/.ssh:/home/dev/.ssh:ro")
-        exec "$engine" "${{args[@]}}" "$IMAGE_REF" "$@"
-      }}
-
-      lima_run() {{
-        command -v limactl >/dev/null 2>&1 || {{ echo "limactl not found. Install Lima and create an apptainer VM." >&2; exit 127; }}
-        limactl list apptainer >/dev/null 2>&1 || {{ echo "Create a Lima Apptainer VM first: limactl create --name=apptainer template://apptainer && limactl start apptainer" >&2; exit 1; }}
-        exec limactl shell apptainer apptainer run "docker://$IMAGE_REF" "$@"
-      }}
-
-      if [[ "${{1:-}}" == "--wrapper-print-runtime" ]]; then
-        if [[ "$host_os" == linux* && "$requested_runtime" == auto ]]; then echo apptainer; exit 0; fi
-        for runtime in "$requested_runtime" docker podman lima; do
-          [[ "$runtime" == auto ]] && continue
-          if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
-          if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
-        done
-        echo none
-        exit 1
-      fi
-
-      case "$requested_runtime" in
-        auto)
-          if [[ "$host_os" == linux* ]]; then apptainer_run "$@"; fi
-          if command -v docker >/dev/null 2>&1; then docker_like_run docker "$@"; fi
-          if command -v podman >/dev/null 2>&1; then docker_like_run podman "$@"; fi
-          lima_run "$@"
-          ;;
-        apptainer) apptainer_run "$@" ;;
-        docker|gvisor) docker_like_run docker "$@" ;;
-        podman) docker_like_run podman "$@" ;;
-        lima) lima_run "$@" ;;
-        *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
-      esac
-    SH
+{render_wrapper(args, sif, caveat_channel)}    SH
   end
 
   def caveats
