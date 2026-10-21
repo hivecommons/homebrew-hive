@@ -113,7 +113,7 @@ across container runs (Apptainer, Docker/Podman, and Lima):
 
 | Host override | Default | Container path |
 |---|---|---|
-| `HIVE_CONTRIBUTOR_CONFIG_DIR` | `~/.config/hive` | `/home/dev/.config/hive` |
+| `HIVE_CONTRIBUTOR_CONFIG_DIR` | `~/.config/hive` | `/home/dev/.config/hive` (re-exported as `HIVE_CONTRIBUTOR_CONFIG_DIR` inside the container) |
 | `HIVE_CONTRIBUTE_STATE_DIR` | `~/.local/state/hive/contribute` | `home/` → `/home/dev/.local/state/hive`; `metrics/` → `/var/run/hive-metrics` |
 
 For example, to keep a separate contributor profile:
