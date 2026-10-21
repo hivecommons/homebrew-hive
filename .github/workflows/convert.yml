@@ -17,9 +17,7 @@ on:
   repository_dispatch:
     types: [hive-contributor-promoted, promote-stable]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: convert-hive-contributor-${{ github.event.inputs.channel || github.event.client_payload.channel || 'stable' }}
@@ -32,6 +30,8 @@ env:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       digest: ${{ steps.meta.outputs.digest }}
@@ -78,11 +78,14 @@ jobs:
         id: exists
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.meta.outputs.tag }}
           FORCE: ${{ github.event.inputs.force || 'false' }}
         run: |
           set -euo pipefail
-          if [ "$FORCE" != "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+          if [ "$FORCE" = "true" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          elif gh release view "$TAG" --json tagName >/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release $TAG already exists; nothing to do."
           else
@@ -92,6 +95,7 @@ jobs:
   build:
     needs: resolve
     if: needs.resolve.outputs.exists != 'true'
+    permissions: {}
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +149,9 @@ jobs:
     needs: [resolve, build]
     if: needs.resolve.outputs.exists != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,10 +170,15 @@ jobs:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           DIGEST: ${{ needs.resolve.outputs.digest }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
         run: |
           set -euo pipefail
           notes="Hive contributor ${CHANNEL} converted to Apptainer SIF.\n\nImage: ${IMAGE_REF}\nDigest: ${DIGEST}"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$FORCE" != "true" ]; then
+              echo "::error::Release $TAG already exists; refusing to clobber its assets (rerun with force=true to override)"
+              exit 1
+            fi
             gh release upload "$TAG" dist/*.sif dist/*.sha256 --clobber
             gh release edit "$TAG" --title "$TAG" --notes "$notes"
           else
