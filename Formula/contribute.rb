@@ -10,10 +10,10 @@ class Contribute < Formula
 
   if Hardware::CPU.arm?
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-arm64.sif"
-    sha256 "c4f04498993f0c30511677ba414e4fd828f9cc5f745ce29fb911f318d9627686"
+    sha256 "dda41e5b852c57f16837f88ac8bd4effc8475a7693124018e257f3a411256a1f"
   else
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-amd64.sif"
-    sha256 "c3c0ba929f684172c76e7912ce300b3a4a775eb583ca4434f806491059933140"
+    sha256 "d64eeea005ed97f718be2efc0ad1e0e3005603c1fd139a4e66380e4f8cf6f0b3"
   end
 
   on_linux do
