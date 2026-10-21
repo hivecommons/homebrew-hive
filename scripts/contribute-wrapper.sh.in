@@ -78,6 +78,7 @@
       }
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
+      export HIVE_CONTRIBUTOR_CONFIG_DIR="$container_config"
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
         export GH_TOKEN="$GITHUB_TOKEN"
       fi
