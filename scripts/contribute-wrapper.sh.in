@@ -20,6 +20,10 @@
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
       AGENT_BACKEND, AGENT_MODEL, AGENT_REASONING_EFFORT, CONTRIBUTOR_MODE,
       HIVE_WORKSPACE_DIR, GH_TOKEN, backend provider API keys, and CLI credential dirs.
+
+      ~/.ssh and ~/.config/gh are NOT mounted by default. Git inside the container
+      uses HTTPS with the forwarded GH_TOKEN. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
+      (read-only ~/.ssh) and/or HIVE_CONTRIBUTE_MOUNT_GH=1 (~/.config/gh).
       USAGE
       }
 
@@ -60,6 +64,16 @@
         esac
       }
 
+      # Git inside the container authenticates over HTTPS with GH_TOKEN. The helper
+      # reads the token from the environment at use time, so no secret is in argv.
+      git_https_env() {
+        [[ -n "${GH_TOKEN:-}" ]] || return 0
+        printf '%s=%s\n' \
+          GIT_CONFIG_COUNT 1 \
+          GIT_CONFIG_KEY_0 'credential.https://github.com.helper' \
+          GIT_CONFIG_VALUE_0 '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+      }
+
       collect_env_names() {
         env | while IFS='=' read -r name _; do
           env_name_allowed "$name" && printf '%s\n' "$name"
@@ -85,6 +99,9 @@
           export "APPTAINERENV_${name}=${!name}"
         done < <(collect_env_names)
         export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
+        while IFS='=' read -r name value; do
+          export "APPTAINERENV_${name}=${value}"
+        done < <(git_https_env)
         args+=(--bind "$workspace:$container_workspace")
         args+=(--bind "$config_dir:$container_config")
         args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
@@ -94,12 +111,16 @@
           add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
           add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
           add_existing_bind "${CODEX_HOME:-$HOME/.codex}" "/home/dev/.codex"
-          add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
           add_existing_bind "$HOME/.gitconfig" "/home/dev/.gitconfig" ro
-          add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
+          if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 ]]; then
+            add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
+          fi
+          if [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" == 1 ]]; then
+            add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
+          fi
         )
         exec apptainer "${args[@]}" "$SIF_PATH" "$@"
       }
@@ -114,6 +135,7 @@
         fi
         while IFS= read -r name; do args+=(-e "$name"); done < <(collect_env_names)
         args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
+        while IFS= read -r kv; do args+=(-e "$kv"); done < <(git_https_env)
         args+=(-v "$workspace:$container_workspace")
         args+=(-v "$config_dir:$container_config")
         args+=(-v "$state_dir/home:/home/dev/.local/state/hive")
@@ -122,12 +144,16 @@
         [[ -e "$HOME/.claude.json" ]] && args+=(-v "$HOME/.claude.json:/home/dev/.claude.json")
         [[ -e "$HOME/.copilot" ]] && args+=(-v "$HOME/.copilot:/home/dev/.copilot")
         [[ -e "${CODEX_HOME:-$HOME/.codex}" ]] && args+=(-v "${CODEX_HOME:-$HOME/.codex}:/home/dev/.codex")
-        [[ -e "$HOME/.config/gh" ]] && args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
         [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
-        [[ -e "$HOME/.ssh" ]] && args+=(-v "$HOME/.ssh:/home/dev/.ssh:ro")
+        if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 && -e "$HOME/.config/gh" ]]; then
+          args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
+        fi
+        if [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" == 1 && -e "$HOME/.ssh" ]]; then
+          args+=(-v "$HOME/.ssh:/home/dev/.ssh:ro")
+        fi
         exec "$engine" "${args[@]}" "$IMAGE_REF" "$@"
       }
 

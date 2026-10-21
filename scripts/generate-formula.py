@@ -79,6 +79,13 @@ class {klass} < Formula
       gVisor is only used when Docker/Podman is selected with
       HIVE_CONTRIBUTE_RUNTIME=gvisor and runsc is installed/configured for that
       engine; runsc/KVM platform selection is managed by gVisor, not this formula.
+
+      Behaviour change: the wrapper no longer mounts ~/.ssh or ~/.config/gh into
+      the container by default. Git inside the container uses HTTPS with the
+      GH_TOKEN the wrapper forwards (via an env-configured git credential helper).
+      To restore the old mounts, set
+        HIVE_CONTRIBUTE_MOUNT_SSH=1   (read-only ~/.ssh)
+        HIVE_CONTRIBUTE_MOUNT_GH=1    (~/.config/gh)
     EOS
   end
 

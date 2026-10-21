@@ -299,6 +299,7 @@ class WrapperTests(unittest.TestCase):
                 "HIVE_REGISTRATION_TOKEN": "reg-token-value",
                 "AGENT_BACKEND": "copilot",
                 "OPENAI_API_KEY": "openai-value",
+                "GH_TOKEN": "gh-token-value",
                 "NOT_FORWARDED_SECRET": "must-not-leak",
             },
         )
@@ -319,13 +320,61 @@ class WrapperTests(unittest.TestCase):
         binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
         self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", binds)
         self.assertIn(f"{self.home}/.config/hive:/home/dev/.config/hive", binds)
-        self.assertIn(f"{self.home}/.config/gh:/home/dev/.config/gh", binds)
         self.assertIn(f"{self.home}/.gitconfig:/home/dev/.gitconfig:ro", binds)
-        self.assertFalse(any(b.startswith(f"{self.home}/.ssh:") for b in binds), "absent dir must not be bound")
+        self.assertFalse(any(b.startswith(f"{self.home}/.config/gh:") for b in binds), "gh dir is opt-in")
+        self.assertFalse(any(b.startswith(f"{self.home}/.ssh:") for b in binds), "ssh dir is opt-in")
+        self.assertEqual(self.forwarded(argv, env, "GIT_CONFIG_COUNT"), "1")
+        self.assertEqual(self.forwarded(argv, env, "GIT_CONFIG_KEY_0"), "credential.https://github.com.helper")
+        self.assertIn("$GH_TOKEN", self.forwarded(argv, env, "GIT_CONFIG_VALUE_0"))
 
         for created in ("workspace", "home/.config/hive", "home/.local/state/hive/contribute/home",
                         "home/.local/state/hive/contribute/metrics"):
             self.assertTrue((self.tmp / created).is_dir(), created)
+
+    def test_apptainer_ssh_and_gh_mounts_are_opt_in(self):
+        self.add_stub("apptainer")
+        (self.home / ".config" / "gh").mkdir(parents=True)
+        (self.home / ".ssh").mkdir()
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
+        self.assertFalse(any("/.ssh" in b or "/.config/gh" in b for b in binds), binds)
+
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_CONTRIBUTE_MOUNT_SSH": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
+        self.assertIn(f"{self.home}/.ssh:/home/dev/.ssh:ro", binds)
+        self.assertFalse(any("/.config/gh" in b for b in binds), binds)
+
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_CONTRIBUTE_MOUNT_GH": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
+        self.assertIn(f"{self.home}/.config/gh:/home/dev/.config/gh", binds)
+        self.assertFalse(any("/.ssh" in b for b in binds), binds)
+
+    def test_docker_ssh_and_gh_mounts_are_opt_in(self):
+        self.add_stub("docker")
+        (self.home / ".config" / "gh").mkdir(parents=True)
+        (self.home / ".ssh").mkdir()
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        volumes = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
+        self.assertFalse(any("/.ssh" in v or "/.config/gh" in v for v in volumes), volumes)
+
+        proc = self.run_wrapper(env={
+            "HIVE_CONTRIBUTE_RUNTIME": "docker",
+            "HIVE_CONTRIBUTE_MOUNT_SSH": "1",
+            "HIVE_CONTRIBUTE_MOUNT_GH": "1",
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        volumes = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
+        self.assertIn(f"{self.home}/.ssh:/home/dev/.ssh:ro", volumes)
+        self.assertIn(f"{self.home}/.config/gh:/home/dev/.config/gh", volumes)
 
     def test_docker_hand_off_passes_names_not_values(self):
         self.add_stub("docker")
