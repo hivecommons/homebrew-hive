@@ -30,7 +30,7 @@ GENERATOR = SCRIPTS_DIR / "generate-formula.py"
 
 # Minimal host tools the wrapper needs; everything else is kept off PATH so
 # the tests never pick up a real container runtime.
-HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh", "mktemp")
+HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh", "mktemp", "rm", "cp")
 
 
 def load_generator():
@@ -487,8 +487,30 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertIn("HIVE_CONTAINER_RUNTIME=podman", argv)
 
+    # limactl stub: `list` always succeeds; `shell` snapshots the env file
+    # (mode preserved) before the wrapper removes it on the host, then exits
+    # with STUB_EXIT.
+    LIMA_STUB = textwrap.dedent('''\
+        #!/usr/bin/env bash
+        out="$STUB_OUT"
+        [ "${1:-}" = shell ] || exit 0
+        : > "$out"
+        printf 'ARGV:%s\\n' "$@" >> "$out"
+        env | sed 's/^/ENV:/' | sort >> "$out"
+        cp -p "$7" "$out.env"
+        exit "${STUB_EXIT:-0}"
+    ''')
+
+    def add_lima_stub(self) -> None:
+        path = self.bindir / "limactl"
+        path.write_text(self.LIMA_STUB)
+        path.chmod(0o755)
+
+    def lima_env_files(self):
+        return sorted((self.home / ".local/state/hive/contribute").glob("lima-env.*"))
+
     def test_lima_forwards_env_and_opt_in_mounts_like_apptainer(self):
-        self.add_stub("limactl")
+        self.add_lima_stub()
         (self.home / ".config" / "gh").mkdir(parents=True)
         (self.home / ".ssh").mkdir()
         proc = self.run_wrapper(
@@ -503,9 +525,12 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         argv, _ = self.stub_record()
-        self.assertEqual(argv[:3], ["shell", "apptainer", "bash"])
-        env_file = Path(argv[argv.index("_") + 1])
-        rest = argv[argv.index("_") + 2:]
+        self.assertEqual(argv[:4], ["shell", "apptainer", "bash", "-c"])
+        script, placeholder, env_file_arg = argv[4], argv[5], argv[6]
+        self.assertIn('. "$1"', script)
+        self.assertEqual(placeholder, "_")
+        self.assertTrue(env_file_arg.startswith(f"{self.home}/.local/state/hive/contribute/lima-env."), env_file_arg)
+        rest = argv[7:]
         self.assertEqual(rest[:4], ["run", "--containall", "--writable-tmpfs", "--pwd"])
         self.assertEqual(rest[-3:], [f"docker://{self.args.image_ref}", "relay", "--flag"])
         binds = [rest[i + 1] for i, a in enumerate(rest) if a == "--bind"]
@@ -515,16 +540,32 @@ class WrapperTests(unittest.TestCase):
 
         joined = " ".join(argv)
         self.assertNotIn("gh-token-value", joined, "token values must stay out of argv")
-        self.assertEqual(stat.S_IMODE(env_file.stat().st_mode), 0o600)
-        contents = env_file.read_text()
+        snapshot = Path(f"{self.stub_out}.env")
+        self.assertEqual(stat.S_IMODE(snapshot.stat().st_mode), 0o600)
+        contents = snapshot.read_text()
         self.assertIn("APPTAINERENV_GH_TOKEN=gh-token-value", contents)
         self.assertIn("APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer", contents)
         self.assertIn("APPTAINERENV_GIT_CONFIG_COUNT=1", contents)
         self.assertIn("APPTAINERENV_GIT_CONFIG_KEY_0=credential.https://github.com.helper", contents)
         self.assertNotIn("must-not-leak", contents)
+        self.assertEqual(self.lima_env_files(), [], "host must remove the token file after limactl exits")
+
+    def test_lima_removes_env_file_and_propagates_failure(self):
+        self.add_lima_stub()
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima", "GH_TOKEN": "t", "STUB_EXIT": "7"})
+        self.assertEqual(proc.returncode, 7, proc.stderr)
+        self.assertTrue(Path(f"{self.stub_out}.env").exists(), "env file must exist while limactl runs")
+        self.assertEqual(self.lima_env_files(), [], "host must remove the token file even when limactl fails")
+
+    def test_lima_create_hint_requires_writable_home(self):
+        self.add_stub("limactl")
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima", "STUB_EXIT": "1"})
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("--mount-writable", proc.stderr)
+        self.assertEqual(self.lima_env_files(), [])
 
     def test_lima_mounts_are_opt_in(self):
-        self.add_stub("limactl")
+        self.add_lima_stub()
         (self.home / ".config" / "gh").mkdir(parents=True)
         (self.home / ".ssh").mkdir()
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima"})

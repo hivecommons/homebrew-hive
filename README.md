@@ -53,15 +53,19 @@ the generated artifact.
   binds a workspace plus Hive/CLI credential directories, and forwards Hive,
   GitHub, and backend provider environment variables.
 - **macOS:** Apptainer is not native; it needs a Linux VM. Lima has an
-  Apptainer template (`limactl create --name=apptainer template://apptainer`).
+  Apptainer template (`limactl create --name=apptainer --mount-writable
+  template://apptainer`).
   The wrapper defaults to Docker or Podman if available and supports
   `HIVE_CONTRIBUTE_RUNTIME=lima` for operators who have created a Lima
   Apptainer VM. Caveat: the Lima path runs the pinned OCI image reference inside
   the VM rather than the local SIF asset unless the user shares the Homebrew
   Cellar into Lima. It forwards the same environment (including the HTTPS git
   credential helper) and honours the same `HIVE_CONTRIBUTE_MOUNT_*` opt-ins as
-  the Linux Apptainer path, assuming Lima shares your home directory into the
-  VM at the same path (its default).
+  the Linux Apptainer path. This requires Lima to share your home directory
+  into the VM at the same path **writable**: Lima's default home share is
+  read-only, so create the VM with `--mount-writable` (or set
+  `mounts: - location: "~"` / `writable: true` in the instance config);
+  otherwise the workspace and state binds are read-only inside the VM.
 - **Windows:** use WSL2 and the Linux path (`brew` on Linux + Apptainer), or run
   Docker/Podman manually with the pinned image digest from the formula caveats.
 - **KVM/gVisor:** the earlier roadmap wording overstated this. Apptainer's

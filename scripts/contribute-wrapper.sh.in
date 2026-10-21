@@ -16,8 +16,9 @@
       Runtime selection:
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
         macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
-        The Lima path forwards the same environment and mounts as native apptainer
-        (the host home must be shared into the VM at the same path).
+        The Lima path forwards the same environment and mounts as native apptainer;
+        the host home must be shared into the VM at the same path AND writable
+        (create the VM with --mount-writable; Lima's default home share is read-only).
 
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
       AGENT_BACKEND, AGENT_MODEL, AGENT_REASONING_EFFORT, CONTRIBUTOR_MODE,
@@ -180,19 +181,25 @@
 
       lima_run() {
         command -v limactl >/dev/null 2>&1 || { echo "limactl not found. Install Lima and create an apptainer VM." >&2; exit 127; }
-        limactl list apptainer >/dev/null 2>&1 || { echo "Create a Lima Apptainer VM first: limactl create --name=apptainer template://apptainer && limactl start apptainer" >&2; exit 1; }
+        limactl list apptainer >/dev/null 2>&1 || { echo "Create a Lima Apptainer VM first: limactl create --name=apptainer --mount-writable template://apptainer && limactl start apptainer" >&2; exit 1; }
         export_apptainer_env
         build_apptainer_args
-        # Lima shares the host home at the same path, so the bind sources above
-        # resolve inside the VM. `limactl shell` does not carry the environment
-        # across, and values must stay out of argv, so hand them over in a 0600
-        # file under the shared state dir that the VM shell sources and removes.
-        local env_file
-        env_file=$(umask 077 && mktemp "$state_dir/lima-env.XXXXXX")
+        # The VM must share the host home at the same path, writable, so the
+        # bind sources above resolve inside the VM and the relay can write to
+        # them. `limactl shell` does not carry the environment across, and
+        # values must stay out of argv, so hand them over in a 0600 file under
+        # the state dir that the VM shell sources. The host removes the file
+        # when limactl exits (the guest cannot on a read-only home share, and
+        # would never get the chance if limactl fails), so no exec here.
+        local status=0
+        lima_env_file=$(umask 077 && mktemp "$state_dir/lima-env.XXXXXX")
+        trap 'rm -f "$lima_env_file"' EXIT
         while IFS= read -r name; do
           printf 'export %s=%q\n' "$name" "${!name}"
-        done < <(compgen -e APPTAINERENV_) >"$env_file"
-        exec limactl shell apptainer bash -c '. "$1"; rm -f "$1"; shift; exec apptainer "$@"' _ "$env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@"
+        done < <(compgen -e APPTAINERENV_) >"$lima_env_file"
+        limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        rm -f "$lima_env_file"
+        exit "$status"
       }
 
       if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
