@@ -88,8 +88,12 @@ The wrapper forwards the inputs the contributor relay needs:
 
 ## Automation
 
-`.github/workflows/convert.yml` runs every six hours, on manual dispatch, and on
-repository dispatch from upstream promotion automation. It:
+`.github/workflows/convert.yml` runs every six hours, on manual dispatch, on
+repository dispatch from upstream promotion automation, and on pushes to `main`
+that change the generator inputs (`scripts/generate-formula.py`,
+`scripts/contribute-wrapper.sh.in`, or the workflow itself), so formula changes
+are regenerated without waiting for the cron. Push runs behave like `force`:
+they rebuild and republish the current stable release. It:
 
 1. resolves `ghcr.io/hivecommons/hive-contributor:<channel>` to an immutable
    digest;

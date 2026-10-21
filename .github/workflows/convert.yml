@@ -1,6 +1,12 @@
 name: Convert Hive contributor image
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/generate-formula.py
+      - scripts/contribute-wrapper.sh.in
+      - .github/workflows/convert.yml
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
@@ -80,7 +86,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.meta.outputs.tag }}
-          FORCE: ${{ github.event.inputs.force || 'false' }}
+          FORCE: ${{ github.event.inputs.force || (github.event_name == 'push' && 'true') || 'false' }}
         run: |
           set -euo pipefail
           if [ "$FORCE" = "true" ]; then
@@ -170,7 +176,7 @@ jobs:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           DIGEST: ${{ needs.resolve.outputs.digest }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
-          FORCE: ${{ github.event.inputs.force || 'false' }}
+          FORCE: ${{ github.event.inputs.force || (github.event_name == 'push' && 'true') || 'false' }}
         run: |
           set -euo pipefail
           notes="Hive contributor ${CHANNEL} converted to Apptainer SIF.\n\nImage: ${IMAGE_REF}\nDigest: ${DIGEST}"
