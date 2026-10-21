@@ -10,10 +10,10 @@ class Contribute < Formula
 
   if Hardware::CPU.arm?
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-arm64.sif"
-    sha256 "42a9f678701e5e15895667dc2fda56259e01bae51f53c0b7e01057001f9c0d69"
+    sha256 "c4f04498993f0c30511677ba414e4fd828f9cc5f745ce29fb911f318d9627686"
   else
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-amd64.sif"
-    sha256 "a58c2a9f49fc1765601a8f16c0b5259ed3f06bc81851f27744b0473acf35fdcc"
+    sha256 "c3c0ba929f684172c76e7912ce300b3a4a775eb583ca4434f806491059933140"
   end
 
   on_linux do
@@ -53,6 +53,10 @@ class Contribute < Formula
       uses HTTPS with the forwarded GH_TOKEN (or GITHUB_TOKEN); without one,
       authenticated clones and pushes fail. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
       (read-only ~/.ssh) and/or HIVE_CONTRIBUTE_MOUNT_GH=1 (~/.config/gh).
+
+      The workspace (HIVE_WORKSPACE_DIR, default: the current directory) is bound
+      read-write. The wrapper refuses a workspace that is or contains your home
+      directory; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override.
       USAGE
       }
 
@@ -74,7 +78,29 @@ class Contribute < Formula
       state_dir="${HIVE_CONTRIBUTE_STATE_DIR:-$HOME/.local/state/hive/contribute}"
       container_workspace="/home/dev/workspace"
       container_config="/home/dev/.config/hive"
+      case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
+
       mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
+
+      # The workspace is bound read-write. Binding $HOME itself, an ancestor
+      # of it, or / would hand the container every credential directory the
+      # wrapper deliberately leaves unmounted (~/.ssh, ~/.config/gh, ~/.aws, …),
+      # so refuse unless the caller opts in explicitly. Both sides are
+      # canonicalised first so '.', '..', '//' and symlink spellings of $HOME
+      # cannot slip past a lexical comparison; the directories exist by now.
+      canonical_dir() {
+        local resolved
+        resolved=$(cd -P -- "$1" 2>/dev/null && pwd -P) || resolved="$1"
+        # POSIX leaves a leading "//" implementation-defined and bash keeps it.
+        while [[ "$resolved" == //* ]]; do resolved="${resolved#/}"; done
+        printf '%s' "${resolved%/}"
+      }
+      workspace_exposes_home() {
+        local ws home
+        ws=$(canonical_dir "$1")
+        home=$(canonical_dir "$HOME")
+        [[ -z "$ws" || "$ws" == "$home" || "$home/" == "$ws/"* ]]
+      }
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
@@ -238,6 +264,10 @@ class Contribute < Formula
         exit 1
       fi
 
+      if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
+        echo "hive-contribute: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2
+        exit 2
+      fi
       warn_if_no_git_auth
 
       case "$requested_runtime" in
