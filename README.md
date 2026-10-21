@@ -114,6 +114,17 @@ when Ruby is absent):
 python3 -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
+## Contributing
+
+- Do not edit `Formula/contribute.rb` by hand; it is generated. Change
+  `scripts/generate-formula.py`, `scripts/contribute-wrapper.sh.in`, or
+  `.github/workflows/convert.yml` instead, and run the generator tests (see
+  [Testing the generator](#testing-the-generator)) before opening a PR.
+- Sign off every commit (`git commit -s`) to satisfy the Developer Certificate
+  of Origin check.
+- Generated formula PRs (`generated/contribute-*` branches) are opened by the
+  conversion workflow; review them, do not push to them.
+
 ## Rollback
 
 If a generated formula installs a bad image, follow
