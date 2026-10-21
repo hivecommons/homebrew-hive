@@ -175,7 +175,8 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
 ## Rollback
 
 If a generated formula installs a bad image, follow
-[`runbooks/rollback.md`](runbooks/rollback.md).
+[`runbooks/rollback.md`](runbooks/rollback.md). If new upstream images are not
+reaching the tap, follow [`runbooks/convert-stalled.md`](runbooks/convert-stalled.md).
 
 ## Installing before a generated release lands
 
