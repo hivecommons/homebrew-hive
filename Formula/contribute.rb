@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "8d0610f72958"
+  version "d08dd5046158"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-8d0610f72958/hive-contributor-arm64.sif"
-    sha256 "157aac21e74ab02315b6e1a7c4024a12fbf8de69e65f0354771072aef53c3e0c"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-arm64.sif"
+    sha256 "42a9f678701e5e15895667dc2fda56259e01bae51f53c0b7e01057001f9c0d69"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-8d0610f72958/hive-contributor-amd64.sif"
-    sha256 "486f7ad324d298b6709b3fead988ce195dc49b0c349b2435980d19aa55409ec4"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-amd64.sif"
+    sha256 "a58c2a9f49fc1765601a8f16c0b5259ed3f06bc81851f27744b0473acf35fdcc"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="8d0610f72958"
+      WRAPPER_VERSION="d08dd5046158"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3"
-      IMAGE_DIGEST="sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948"
+      IMAGE_DIGEST="sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
 
       usage() {
@@ -41,10 +41,18 @@ class Contribute < Formula
       Runtime selection:
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
         macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
+        The Lima path forwards the same environment and mounts as native apptainer;
+        the host home must be shared into the VM at the same path AND writable
+        (create the VM with --mount-writable; Lima's default home share is read-only).
 
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
       AGENT_BACKEND, AGENT_MODEL, AGENT_REASONING_EFFORT, CONTRIBUTOR_MODE,
       HIVE_WORKSPACE_DIR, GH_TOKEN, backend provider API keys, and CLI credential dirs.
+
+      ~/.ssh and ~/.config/gh are NOT mounted by default. Git inside the container
+      uses HTTPS with the forwarded GH_TOKEN (or GITHUB_TOKEN); without one,
+      authenticated clones and pushes fail. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
+      (read-only ~/.ssh) and/or HIVE_CONTRIBUTE_MOUNT_GH=1 (~/.config/gh).
       USAGE
       }
 
@@ -85,6 +93,24 @@ class Contribute < Formula
         esac
       }
 
+      # Git inside the container authenticates over HTTPS with GH_TOKEN. The helper
+      # is always configured and reads GH_TOKEN (or GITHUB_TOKEN) from the
+      # container environment at use time, so no secret is in argv and a token
+      # provided later (e.g. by the relay) is picked up; with no token it prints
+      # nothing and git falls through to its normal behaviour.
+      git_https_env() {
+        printf '%s=%s\n' \
+          GIT_CONFIG_COUNT 1 \
+          GIT_CONFIG_KEY_0 'credential.https://github.com.helper' \
+          GIT_CONFIG_VALUE_0 '!f() { t="${GH_TOKEN:-${GITHUB_TOKEN:-}}"; [ -n "$t" ] || exit 0; echo username=x-access-token; echo "password=$t"; }; f'
+      }
+
+      warn_if_no_git_auth() {
+        [[ -z "${GH_TOKEN:-}" ]] || return 0
+        [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" != 1 && "${HIVE_CONTRIBUTE_MOUNT_GH:-}" != 1 ]] || return 0
+        echo "hive-contribute: GH_TOKEN/GITHUB_TOKEN is not set; git inside the container has no GitHub credentials (~/.ssh and ~/.config/gh are not mounted by default). Set GH_TOKEN, or opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1 / HIVE_CONTRIBUTE_MOUNT_GH=1." >&2
+      }
+
       collect_env_names() {
         env | while IFS='=' read -r name _; do
           env_name_allowed "$name" && printf '%s\n' "$name"
@@ -100,33 +126,50 @@ class Contribute < Formula
         esac
       }
 
-      apptainer_run() {
-        command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
-        local -a args=(run --containall --writable-tmpfs --pwd /home/dev)
-        # Hand values over through APPTAINERENV_* (honoured under --containall)
-        # rather than `--env NAME=VALUE`, which would expose every forwarded
-        # token in the apptainer process's argv (/proc/<pid>/cmdline).
+      # Hand values over through APPTAINERENV_* (honoured under --containall)
+      # rather than `--env NAME=VALUE`, which would expose every forwarded
+      # token in the apptainer process's argv (/proc/<pid>/cmdline).
+      export_apptainer_env() {
         while IFS= read -r name; do
           export "APPTAINERENV_${name}=${!name}"
         done < <(collect_env_names)
         export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
-        args+=(--bind "$workspace:$container_workspace")
-        args+=(--bind "$config_dir:$container_config")
-        args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
-        args+=(--bind "$state_dir/metrics:/var/run/hive-metrics")
-        while IFS= read -r bind; do args+=(--bind "$bind"); done < <(
+        while IFS='=' read -r name value; do
+          export "APPTAINERENV_${name}=${value}"
+        done < <(git_https_env)
+      }
+
+      # Run arguments shared by the native and Lima apptainer paths.
+      apptainer_args=()
+      build_apptainer_args() {
+        apptainer_args=(run --containall --writable-tmpfs --pwd /home/dev)
+        apptainer_args+=(--bind "$workspace:$container_workspace")
+        apptainer_args+=(--bind "$config_dir:$container_config")
+        apptainer_args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
+        apptainer_args+=(--bind "$state_dir/metrics:/var/run/hive-metrics")
+        while IFS= read -r bind; do apptainer_args+=(--bind "$bind"); done < <(
           add_existing_bind "$HOME/.claude" "/home/dev/.claude"
           add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
           add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
           add_existing_bind "${CODEX_HOME:-$HOME/.codex}" "/home/dev/.codex"
-          add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
           add_existing_bind "$HOME/.gitconfig" "/home/dev/.gitconfig" ro
-          add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
+          if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 ]]; then
+            add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
+          fi
+          if [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" == 1 ]]; then
+            add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
+          fi
         )
-        exec apptainer "${args[@]}" "$SIF_PATH" "$@"
+      }
+
+      apptainer_run() {
+        command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
+        export_apptainer_env
+        build_apptainer_args
+        exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
       }
 
       docker_like_run() {
@@ -139,6 +182,7 @@ class Contribute < Formula
         fi
         while IFS= read -r name; do args+=(-e "$name"); done < <(collect_env_names)
         args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
+        while IFS= read -r kv; do args+=(-e "$kv"); done < <(git_https_env)
         args+=(-v "$workspace:$container_workspace")
         args+=(-v "$config_dir:$container_config")
         args+=(-v "$state_dir/home:/home/dev/.local/state/hive")
@@ -147,19 +191,40 @@ class Contribute < Formula
         [[ -e "$HOME/.claude.json" ]] && args+=(-v "$HOME/.claude.json:/home/dev/.claude.json")
         [[ -e "$HOME/.copilot" ]] && args+=(-v "$HOME/.copilot:/home/dev/.copilot")
         [[ -e "${CODEX_HOME:-$HOME/.codex}" ]] && args+=(-v "${CODEX_HOME:-$HOME/.codex}:/home/dev/.codex")
-        [[ -e "$HOME/.config/gh" ]] && args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
         [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
-        [[ -e "$HOME/.ssh" ]] && args+=(-v "$HOME/.ssh:/home/dev/.ssh:ro")
+        if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 && -e "$HOME/.config/gh" ]]; then
+          args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
+        fi
+        if [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" == 1 && -e "$HOME/.ssh" ]]; then
+          args+=(-v "$HOME/.ssh:/home/dev/.ssh:ro")
+        fi
         exec "$engine" "${args[@]}" "$IMAGE_REF" "$@"
       }
 
       lima_run() {
         command -v limactl >/dev/null 2>&1 || { echo "limactl not found. Install Lima and create an apptainer VM." >&2; exit 127; }
-        limactl list apptainer >/dev/null 2>&1 || { echo "Create a Lima Apptainer VM first: limactl create --name=apptainer template://apptainer && limactl start apptainer" >&2; exit 1; }
-        exec limactl shell apptainer apptainer run "docker://$IMAGE_REF" "$@"
+        limactl list apptainer >/dev/null 2>&1 || { echo "Create a Lima Apptainer VM first: limactl create --name=apptainer --mount-writable template://apptainer && limactl start apptainer" >&2; exit 1; }
+        export_apptainer_env
+        build_apptainer_args
+        # The VM must share the host home at the same path, writable, so the
+        # bind sources above resolve inside the VM and the relay can write to
+        # them. `limactl shell` does not carry the environment across, and
+        # values must stay out of argv, so hand them over in a 0600 file under
+        # the state dir that the VM shell sources. The host removes the file
+        # when limactl exits (the guest cannot on a read-only home share, and
+        # would never get the chance if limactl fails), so no exec here.
+        local status=0
+        lima_env_file=$(umask 077 && mktemp "$state_dir/lima-env.XXXXXX")
+        trap 'rm -f "$lima_env_file"' EXIT
+        while IFS= read -r name; do
+          printf 'export %s=%q\n' "$name" "${!name}"
+        done < <(compgen -e APPTAINERENV_) >"$lima_env_file"
+        limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        rm -f "$lima_env_file"
+        exit "$status"
       }
 
       if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
@@ -172,6 +237,8 @@ class Contribute < Formula
         echo none
         exit 1
       fi
+
+      warn_if_no_git_auth
 
       case "$requested_runtime" in
         auto)
@@ -192,7 +259,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:8d0610f72958c7c57dcf6799fa1f2af12c856c9c7b7d0a6a44f85440554551a3
+        ghcr.io/hivecommons/hive-contributor@sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -202,12 +269,23 @@ class Contribute < Formula
       gVisor is only used when Docker/Podman is selected with
       HIVE_CONTRIBUTE_RUNTIME=gvisor and runsc is installed/configured for that
       engine; runsc/KVM platform selection is managed by gVisor, not this formula.
+
+      Behaviour change: the wrapper no longer mounts ~/.ssh or ~/.config/gh into
+      the container by default. Git inside the container uses HTTPS with the
+      GH_TOKEN (or GITHUB_TOKEN) the wrapper forwards, via an env-configured git
+      credential helper; without a token, authenticated clones and pushes fail
+      and the wrapper prints a warning. To restore the old mounts, set
+        HIVE_CONTRIBUTE_MOUNT_SSH=1   (read-only ~/.ssh)
+        HIVE_CONTRIBUTE_MOUNT_GH=1    (~/.config/gh)
+      ~/.gitconfig is still mounted read-only: a url.<base>.insteadOf rule that
+      rewrites https://github.com/ to SSH bypasses the HTTPS helper and needs
+      HIVE_CONTRIBUTE_MOUNT_SSH=1.
     EOS
   end
 
   test do
     assert_match(
-      "hive-contribute 8d0610f72958",
+      "hive-contribute d08dd5046158",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
   end
