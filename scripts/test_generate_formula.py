@@ -579,6 +579,87 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 127)
         self.assertIn("limactl not found", proc.stderr)
 
+    # macOS dispatch. The wrapper reads `uname -s` once, so swapping the
+    # uname on PATH for a stub that reports Darwin drives the non-Linux
+    # branches of `auto` and `--wrapper-print-runtime` without a Mac. Each
+    # *_run function execs, so the first runtime found must be the only
+    # one invoked; a stub left behind in STUB_OUT by a later runtime would
+    # mean the fallthrough did not stop.
+
+    def pretend_macos(self) -> None:
+        uname = self.bindir / "uname"
+        uname.unlink()
+        uname.write_text("#!/usr/bin/env bash\necho Darwin\n")
+        uname.chmod(0o755)
+
+    def test_auto_on_macos_prefers_docker_over_podman_and_lima(self):
+        self.pretend_macos()
+        for engine in ("apptainer", "docker", "podman"):
+            self.add_stub(engine)
+        self.add_lima_stub()
+        proc = self.run_wrapper("relay-arg")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertEqual(argv[0], "run")
+        self.assertIn("HIVE_CONTAINER_RUNTIME=docker", argv)
+        self.assertNotIn("HIVE_CONTAINER_RUNTIME=podman", argv)
+
+    def test_auto_on_macos_falls_back_to_podman_when_docker_is_absent(self):
+        self.pretend_macos()
+        self.add_stub("apptainer")
+        self.add_stub("podman")
+        self.add_lima_stub()
+        proc = self.run_wrapper()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertIn("HIVE_CONTAINER_RUNTIME=podman", argv)
+
+    def test_auto_on_macos_falls_through_to_lima_when_no_oci_engine(self):
+        self.pretend_macos()
+        self.add_stub("apptainer")
+        self.add_lima_stub()
+        proc = self.run_wrapper("relay-arg", env={"GH_TOKEN": "t"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertEqual(argv[:2], ["shell", "apptainer"])
+        self.assertEqual(argv[-1], "relay-arg")
+        self.assertEqual(self.lima_env_files(), [])
+
+    def test_auto_on_macos_never_selects_native_apptainer(self):
+        self.pretend_macos()
+        self.add_stub("apptainer")
+        proc = self.run_wrapper()
+        self.assertEqual(proc.returncode, 127)
+        self.assertIn("limactl not found", proc.stderr)
+        self.assertFalse(self.stub_out.exists(), "apptainer must not run natively on macOS")
+
+    def test_print_runtime_on_macos_orders_docker_podman_lima_none(self):
+        self.pretend_macos()
+        self.add_stub("apptainer")
+        expectations = [
+            (("docker", "podman", "limactl"), 0, "docker"),
+            (("podman", "limactl"), 0, "podman"),
+            (("limactl",), 0, "lima"),
+            ((), 1, "none"),
+        ]
+        for stubs, code, want in expectations:
+            with self.subTest(stubs=stubs):
+                for name in ("docker", "podman", "limactl"):
+                    (self.bindir / name).unlink(missing_ok=True)
+                for name in stubs:
+                    self.add_stub(name)
+                proc = self.run_wrapper("--wrapper-print-runtime")
+                self.assertEqual(proc.returncode, code, proc.stderr)
+                self.assertEqual(proc.stdout.strip(), want)
+
+    def test_print_runtime_on_macos_honours_explicit_lima_request(self):
+        self.pretend_macos()
+        self.add_stub("docker")
+        self.add_stub("limactl")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "lima"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "lima")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -120,9 +120,10 @@ The workflow pins third-party GitHub Actions by full commit SHA and uses only
 ## Testing the generator
 
 `scripts/test_generate_formula.py` renders the formula with fixed inputs and
-runs the embedded `hive-contribute` wrapper against stub `apptainer`, `docker`
-and `podman` binaries. It needs only Python 3 (the `ruby -c` case is skipped
-when Ruby is absent):
+runs the embedded `hive-contribute` wrapper against stub `apptainer`, `docker`,
+`podman` and `limactl` binaries; a stub `uname` reporting Darwin drives the
+macOS `auto` dispatch (docker → podman → Lima) on Linux. It needs only Python 3
+(the `ruby -c` case is skipped when Ruby is absent):
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_*.py' -v
