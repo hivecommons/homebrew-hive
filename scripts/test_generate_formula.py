@@ -325,7 +325,12 @@ class WrapperTests(unittest.TestCase):
         self.assertFalse(any(b.startswith(f"{self.home}/.ssh:") for b in binds), "ssh dir is opt-in")
         self.assertEqual(self.forwarded(argv, env, "GIT_CONFIG_COUNT"), "1")
         self.assertEqual(self.forwarded(argv, env, "GIT_CONFIG_KEY_0"), "credential.https://github.com.helper")
-        self.assertIn("$GH_TOKEN", self.forwarded(argv, env, "GIT_CONFIG_VALUE_0"))
+        helper = self.forwarded(argv, env, "GIT_CONFIG_VALUE_0")
+        self.assertNotIn("gh-token-value", helper, "helper must read the token lazily, not embed it")
+        self.assertEqual(
+            self.run_credential_helper(helper, {"GH_TOKEN": "gh-token-value"}),
+            "username=x-access-token\npassword=gh-token-value\n",
+        )
 
         for created in ("workspace", "home/.config/hive", "home/.local/state/hive/contribute/home",
                         "home/.local/state/hive/contribute/metrics"):
@@ -401,8 +406,62 @@ class WrapperTests(unittest.TestCase):
         self.assertNotIn("NOT_FORWARDED_SECRET", forwarded_names)
         self.assertNotIn("reg-token-value", " ".join(argv), "values must come from the environment, not argv")
         self.assertEqual(env.get("GH_TOKEN"), "gh-token-value")
+        self.assertIn("GIT_CONFIG_COUNT=1", forwarded_names)
+        self.assertIn("GIT_CONFIG_KEY_0=credential.https://github.com.helper", forwarded_names)
+        helper = [n for n in forwarded_names if n.startswith("GIT_CONFIG_VALUE_0=")]
+        self.assertEqual(len(helper), 1, forwarded_names)
+        self.assertNotIn("gh-token-value", helper[0], "helper must read the token lazily, not embed it")
+        self.assertEqual(proc.stderr, "", "no git-auth warning when a token is set")
         volumes = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
         self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", volumes)
+
+    def run_credential_helper(self, helper_value: str, env: dict) -> str:
+        """Run the git credential helper body the way git would (leading '!' stripped)."""
+        self.assertTrue(helper_value.startswith("!"), helper_value)
+        proc = subprocess.run(
+            ["bash", "-c", helper_value[1:]],
+            env={"PATH": str(self.bindir), **env}, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout
+
+    def test_git_credential_helper_is_always_configured_and_reads_token_lazily(self):
+        self.add_stub("docker")
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("GH_TOKEN/GITHUB_TOKEN is not set", proc.stderr)
+        self.assertIn("HIVE_CONTRIBUTE_MOUNT_SSH=1", proc.stderr)
+        argv, _ = self.stub_record()
+        forwarded = [argv[i + 1] for i, a in enumerate(argv) if a == "-e"]
+        self.assertNotIn("GH_TOKEN", forwarded)
+        self.assertIn("GIT_CONFIG_COUNT=1", forwarded, "helper is configured even without a host token")
+        helper = next(n for n in forwarded if n.startswith("GIT_CONFIG_VALUE_0=")).split("=", 1)[1]
+
+        self.assertEqual(self.run_credential_helper(helper, {}), "", "no token: helper stays silent")
+        self.assertEqual(
+            self.run_credential_helper(helper, {"GH_TOKEN": "tok-a"}),
+            "username=x-access-token\npassword=tok-a\n",
+        )
+        self.assertEqual(
+            self.run_credential_helper(helper, {"GITHUB_TOKEN": "tok-b"}),
+            "username=x-access-token\npassword=tok-b\n",
+            "falls back to GITHUB_TOKEN",
+        )
+
+    def test_no_git_auth_warning_is_suppressed_by_token_or_opt_in_mounts(self):
+        self.add_stub("docker")
+        for env in (
+            {"GH_TOKEN": "t"},
+            {"GITHUB_TOKEN": "t"},
+            {"HIVE_CONTRIBUTE_MOUNT_SSH": "1"},
+            {"HIVE_CONTRIBUTE_MOUNT_GH": "1"},
+        ):
+            proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "docker", **env})
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("GH_TOKEN/GITHUB_TOKEN is not set", proc.stderr, env)
+        for flag in ("--help", "--wrapper-version", "--wrapper-print-runtime"):
+            proc = self.run_wrapper(flag, env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
+            self.assertNotIn("GH_TOKEN/GITHUB_TOKEN is not set", proc.stderr, flag)
 
     # The engine name is currently forwarded as the first relay argument
     # (hivecommons/homebrew-hive#70). Remove the decorator when that is fixed.

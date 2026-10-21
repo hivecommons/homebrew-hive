@@ -22,7 +22,8 @@
       HIVE_WORKSPACE_DIR, GH_TOKEN, backend provider API keys, and CLI credential dirs.
 
       ~/.ssh and ~/.config/gh are NOT mounted by default. Git inside the container
-      uses HTTPS with the forwarded GH_TOKEN. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
+      uses HTTPS with the forwarded GH_TOKEN (or GITHUB_TOKEN); without one,
+      authenticated clones and pushes fail. Opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1
       (read-only ~/.ssh) and/or HIVE_CONTRIBUTE_MOUNT_GH=1 (~/.config/gh).
       USAGE
       }
@@ -65,13 +66,21 @@
       }
 
       # Git inside the container authenticates over HTTPS with GH_TOKEN. The helper
-      # reads the token from the environment at use time, so no secret is in argv.
+      # is always configured and reads GH_TOKEN (or GITHUB_TOKEN) from the
+      # container environment at use time, so no secret is in argv and a token
+      # provided later (e.g. by the relay) is picked up; with no token it prints
+      # nothing and git falls through to its normal behaviour.
       git_https_env() {
-        [[ -n "${GH_TOKEN:-}" ]] || return 0
         printf '%s=%s\n' \
           GIT_CONFIG_COUNT 1 \
           GIT_CONFIG_KEY_0 'credential.https://github.com.helper' \
-          GIT_CONFIG_VALUE_0 '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+          GIT_CONFIG_VALUE_0 '!f() { t="${GH_TOKEN:-${GITHUB_TOKEN:-}}"; [ -n "$t" ] || exit 0; echo username=x-access-token; echo "password=$t"; }; f'
+      }
+
+      warn_if_no_git_auth() {
+        [[ -z "${GH_TOKEN:-}" ]] || return 0
+        [[ "${HIVE_CONTRIBUTE_MOUNT_SSH:-}" != 1 && "${HIVE_CONTRIBUTE_MOUNT_GH:-}" != 1 ]] || return 0
+        echo "@BINARY@: GH_TOKEN/GITHUB_TOKEN is not set; git inside the container has no GitHub credentials (~/.ssh and ~/.config/gh are not mounted by default). Set GH_TOKEN, or opt in with HIVE_CONTRIBUTE_MOUNT_SSH=1 / HIVE_CONTRIBUTE_MOUNT_GH=1." >&2
       }
 
       collect_env_names() {
@@ -173,6 +182,8 @@
         echo none
         exit 1
       fi
+
+      warn_if_no_git_auth
 
       case "$requested_runtime" in
         auto)

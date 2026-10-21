@@ -82,10 +82,14 @@ class {klass} < Formula
 
       Behaviour change: the wrapper no longer mounts ~/.ssh or ~/.config/gh into
       the container by default. Git inside the container uses HTTPS with the
-      GH_TOKEN the wrapper forwards (via an env-configured git credential helper).
-      To restore the old mounts, set
+      GH_TOKEN (or GITHUB_TOKEN) the wrapper forwards, via an env-configured git
+      credential helper; without a token, authenticated clones and pushes fail
+      and the wrapper prints a warning. To restore the old mounts, set
         HIVE_CONTRIBUTE_MOUNT_SSH=1   (read-only ~/.ssh)
         HIVE_CONTRIBUTE_MOUNT_GH=1    (~/.config/gh)
+      ~/.gitconfig is still mounted read-only: a url.<base>.insteadOf rule that
+      rewrites https://github.com/ to SSH bypasses the HTTPS helper and needs
+      HIVE_CONTRIBUTE_MOUNT_SSH=1.
     EOS
   end
 
