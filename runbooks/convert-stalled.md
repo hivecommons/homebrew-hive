@@ -44,6 +44,8 @@ producer of formula updates.
    | `build` / Build SIF | Image cannot be pulled or converted (one arch missing) | Confirm the upstream manifest lists both `linux/amd64` and `linux/arm64`. |
    | `publish` / release assets | A partial release exists for this digest | Re-run with `force=true` (below). |
    | Generate / smoke formula | `scripts/generate-formula.py` or wrapper template regression | Reproduce locally with `python3 scripts/test_generate_formula.py`, then fix on a branch. |
+   | `publish` / Validate generated formula like Tap CI (Homebrew bootstrap: `curl raw.githubusercontent.com`, `brew tap`, or `brew install` download) | Network or GitHub outage while installing Homebrew, tapping, or fetching the just-published SIF | Re-run with `force=true` (below): the release already exists, so a plain re-run or the next cron run skips it as "exists". |
+   | `publish` / Validate generated formula like Tap CI (`brew style`, `brew audit --strict --new`, `brew install --build-from-source`, `<binary> --help`, `brew test`) | Generated formula or wrapper regression that `ruby -c` did not catch | Reproduce locally: `brew tap hivecommons/hive <checkout>`, then `brew style`, `brew audit --strict --new hivecommons/hive/contribute`, `brew install --build-from-source hivecommons/hive/contribute`, `brew test hivecommons/hive/contribute`. Fix `scripts/generate-formula.py` or `scripts/contribute-wrapper.sh.in` on a branch; the push to `main` reruns with `force` semantics. |
    | Commit step / `gh pr` | Token permissions or branch protection | Check the repository's Actions permissions; a maintainer must adjust them. |
 
 3. If the schedule is silently disabled, re-enable it in the Actions tab (or
@@ -52,7 +54,8 @@ producer of formula updates.
 ## Recover
 
 Re-run the failed run first. If the release for the digest already exists but
-no PR was produced, or assets are incomplete, force a rebuild:
+no PR was produced (including when the formula validation step failed after
+the release was published), or assets are incomplete, force a rebuild:
 
 ```sh
 gh workflow run convert.yml --repo hivecommons/homebrew-hive \
