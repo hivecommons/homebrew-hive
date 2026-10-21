@@ -30,7 +30,7 @@ GENERATOR = SCRIPTS_DIR / "generate-formula.py"
 
 # Minimal host tools the wrapper needs; everything else is kept off PATH so
 # the tests never pick up a real container runtime.
-HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh")
+HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh", "mktemp")
 
 
 def load_generator():
