@@ -487,6 +487,52 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertIn("HIVE_CONTAINER_RUNTIME=podman", argv)
 
+    def test_lima_forwards_env_and_opt_in_mounts_like_apptainer(self):
+        self.add_stub("limactl")
+        (self.home / ".config" / "gh").mkdir(parents=True)
+        (self.home / ".ssh").mkdir()
+        proc = self.run_wrapper(
+            "relay", "--flag",
+            env={
+                "HIVE_CONTRIBUTE_RUNTIME": "lima",
+                "HIVE_CONTRIBUTE_MOUNT_SSH": "1",
+                "HIVE_CONTRIBUTE_MOUNT_GH": "1",
+                "GH_TOKEN": "gh-token-value",
+                "NOT_FORWARDED_SECRET": "must-not-leak",
+            },
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertEqual(argv[:3], ["shell", "apptainer", "bash"])
+        env_file = Path(argv[argv.index("_") + 1])
+        rest = argv[argv.index("_") + 2:]
+        self.assertEqual(rest[:4], ["run", "--containall", "--writable-tmpfs", "--pwd"])
+        self.assertEqual(rest[-3:], [f"docker://{self.args.image_ref}", "relay", "--flag"])
+        binds = [rest[i + 1] for i, a in enumerate(rest) if a == "--bind"]
+        self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", binds)
+        self.assertIn(f"{self.home}/.ssh:/home/dev/.ssh:ro", binds)
+        self.assertIn(f"{self.home}/.config/gh:/home/dev/.config/gh", binds)
+
+        joined = " ".join(argv)
+        self.assertNotIn("gh-token-value", joined, "token values must stay out of argv")
+        self.assertEqual(stat.S_IMODE(env_file.stat().st_mode), 0o600)
+        contents = env_file.read_text()
+        self.assertIn("APPTAINERENV_GH_TOKEN=gh-token-value", contents)
+        self.assertIn("APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer", contents)
+        self.assertIn("APPTAINERENV_GIT_CONFIG_COUNT=1", contents)
+        self.assertIn("APPTAINERENV_GIT_CONFIG_KEY_0=credential.https://github.com.helper", contents)
+        self.assertNotIn("must-not-leak", contents)
+
+    def test_lima_mounts_are_opt_in(self):
+        self.add_stub("limactl")
+        (self.home / ".config" / "gh").mkdir(parents=True)
+        (self.home / ".ssh").mkdir()
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
+        self.assertFalse(any("/.ssh" in b or "/.config/gh" in b for b in binds), binds)
+
     def test_lima_requires_limactl(self):
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima"})
         self.assertEqual(proc.returncode, 127)

@@ -16,6 +16,8 @@
       Runtime selection:
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
         macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
+        The Lima path forwards the same environment and mounts as native apptainer
+        (the host home must be shared into the VM at the same path).
 
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
       AGENT_BACKEND, AGENT_MODEL, AGENT_REASONING_EFFORT, CONTRIBUTOR_MODE,
@@ -98,12 +100,10 @@
         esac
       }
 
-      apptainer_run() {
-        command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
-        local -a args=(run --containall --writable-tmpfs --pwd /home/dev)
-        # Hand values over through APPTAINERENV_* (honoured under --containall)
-        # rather than `--env NAME=VALUE`, which would expose every forwarded
-        # token in the apptainer process's argv (/proc/<pid>/cmdline).
+      # Hand values over through APPTAINERENV_* (honoured under --containall)
+      # rather than `--env NAME=VALUE`, which would expose every forwarded
+      # token in the apptainer process's argv (/proc/<pid>/cmdline).
+      export_apptainer_env() {
         while IFS= read -r name; do
           export "APPTAINERENV_${name}=${!name}"
         done < <(collect_env_names)
@@ -111,11 +111,17 @@
         while IFS='=' read -r name value; do
           export "APPTAINERENV_${name}=${value}"
         done < <(git_https_env)
-        args+=(--bind "$workspace:$container_workspace")
-        args+=(--bind "$config_dir:$container_config")
-        args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
-        args+=(--bind "$state_dir/metrics:/var/run/hive-metrics")
-        while IFS= read -r bind; do args+=(--bind "$bind"); done < <(
+      }
+
+      # Run arguments shared by the native and Lima apptainer paths.
+      apptainer_args=()
+      build_apptainer_args() {
+        apptainer_args=(run --containall --writable-tmpfs --pwd /home/dev)
+        apptainer_args+=(--bind "$workspace:$container_workspace")
+        apptainer_args+=(--bind "$config_dir:$container_config")
+        apptainer_args+=(--bind "$state_dir/home:/home/dev/.local/state/hive")
+        apptainer_args+=(--bind "$state_dir/metrics:/var/run/hive-metrics")
+        while IFS= read -r bind; do apptainer_args+=(--bind "$bind"); done < <(
           add_existing_bind "$HOME/.claude" "/home/dev/.claude"
           add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
           add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
@@ -131,7 +137,13 @@
             add_existing_bind "$HOME/.ssh" "/home/dev/.ssh" ro
           fi
         )
-        exec apptainer "${args[@]}" "$SIF_PATH" "$@"
+      }
+
+      apptainer_run() {
+        command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
+        export_apptainer_env
+        build_apptainer_args
+        exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
       }
 
       docker_like_run() {
@@ -169,7 +181,18 @@
       lima_run() {
         command -v limactl >/dev/null 2>&1 || { echo "limactl not found. Install Lima and create an apptainer VM." >&2; exit 127; }
         limactl list apptainer >/dev/null 2>&1 || { echo "Create a Lima Apptainer VM first: limactl create --name=apptainer template://apptainer && limactl start apptainer" >&2; exit 1; }
-        exec limactl shell apptainer apptainer run "docker://$IMAGE_REF" "$@"
+        export_apptainer_env
+        build_apptainer_args
+        # Lima shares the host home at the same path, so the bind sources above
+        # resolve inside the VM. `limactl shell` does not carry the environment
+        # across, and values must stay out of argv, so hand them over in a 0600
+        # file under the shared state dir that the VM shell sources and removes.
+        local env_file
+        env_file=$(umask 077 && mktemp "$state_dir/lima-env.XXXXXX")
+        while IFS= read -r name; do
+          printf 'export %s=%q\n' "$name" "${!name}"
+        done < <(compgen -e APPTAINERENV_) >"$env_file"
+        exec limactl shell apptainer bash -c '. "$1"; rm -f "$1"; shift; exec apptainer "$@"' _ "$env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@"
       }
 
       if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then

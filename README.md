@@ -58,7 +58,10 @@ the generated artifact.
   `HIVE_CONTRIBUTE_RUNTIME=lima` for operators who have created a Lima
   Apptainer VM. Caveat: the Lima path runs the pinned OCI image reference inside
   the VM rather than the local SIF asset unless the user shares the Homebrew
-  Cellar into Lima.
+  Cellar into Lima. It forwards the same environment (including the HTTPS git
+  credential helper) and honours the same `HIVE_CONTRIBUTE_MOUNT_*` opt-ins as
+  the Linux Apptainer path, assuming Lima shares your home directory into the
+  VM at the same path (its default).
 - **Windows:** use WSL2 and the Linux path (`brew` on Linux + Apptainer), or run
   Docker/Podman manually with the pinned image digest from the formula caveats.
 - **KVM/gVisor:** the earlier roadmap wording overstated this. Apptainer's
