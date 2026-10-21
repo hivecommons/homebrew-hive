@@ -154,7 +154,10 @@ they rebuild and republish the current stable release. It:
 4. refuses assets at or above GitHub's 2 GB release-asset limit;
 5. publishes a `contribute-<digest>` release (or `contribute-candidate-<digest>`);
 6. regenerates the formula with per-arch URLs and SHA-256 values;
-7. opens a PR for the generated formula.
+7. validates the generated formula with the same commands as `Tap CI`
+   (`brew style`, `brew audit --strict --new`, `brew install
+   --build-from-source`, `brew test`) against the just-published release;
+8. opens a PR for the generated formula.
 
 The workflow pins third-party GitHub Actions by full commit SHA and uses only
 `contents: write` / `pull-requests: write` permissions.

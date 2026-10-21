@@ -238,6 +238,27 @@ jobs:
           ruby -c Formula/*.rb
           grep -R -- "--wrapper-version" Formula/*.rb
 
+      - name: Validate generated formula like Tap CI
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+        run: |
+          set -euo pipefail
+          # This job holds a write token, so never bootstrap brew from a remote
+          # script here: use the runner image's Homebrew or fail the step.
+          export PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
+          command -v brew >/dev/null 2>&1 || { echo "::error::brew is not on the runner image; cannot validate the generated formula" >&2; exit 1; }
+          if [ "$CHANNEL" = stable ]; then formula=contribute; binary=hive-contribute; else formula=contribute-candidate; binary=hive-contribute-candidate; fi
+          # `brew tap <path>` clones committed HEAD, so overlay the uncommitted
+          # generated formula into the tap before auditing it.
+          brew tap hivecommons/hive "$PWD"
+          mkdir -p "$(brew --repository hivecommons/hive)/Formula"
+          cp "Formula/${formula}.rb" "$(brew --repository hivecommons/hive)/Formula/${formula}.rb"
+          brew style "Formula/${formula}.rb"
+          brew audit --strict --new "hivecommons/hive/${formula}"
+          brew install --build-from-source "hivecommons/hive/${formula}"
+          "$binary" --help
+          brew test "hivecommons/hive/${formula}"
+
       - name: Commit generated formula
         env:
           GH_TOKEN: ${{ github.token }}
