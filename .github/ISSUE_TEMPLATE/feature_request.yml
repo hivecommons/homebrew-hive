@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest an improvement to the contribute formula, the hive-contribute wrapper, or the release automation
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `Formula/` is generated output, so changes land in `scripts/generate-formula.py`,
+        `scripts/contribute-wrapper.sh.in` or the conversion workflow. Requests for the contributor relay
+        itself belong in [hivecommons/hive](https://github.com/hivecommons/hive/issues).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation (formula, platforms, dependencies)
+        - hive-contribute wrapper (runtimes, mounts, forwarded environment)
+        - Release channels and conversion automation
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem are you trying to solve, and on which platform?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other designs you have considered.
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility
+      description: Would this change the installed command name, the `HIVE_CONTRIBUTE_*` variables, the mounted paths, or what existing installs get on `brew upgrade`?

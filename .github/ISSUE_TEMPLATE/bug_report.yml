@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a problem installing the contribute formula or running hive-contribute
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+        **Do not paste credentials.** The wrapper forwards `GH_TOKEN` / `GITHUB_TOKEN`, `HIVE_REGISTRATION_TOKEN`
+        and backend provider API keys into the container, so remove their values from everything below,
+        including logs and `env` output. For security vulnerabilities, follow
+        [SECURITY.md](https://github.com/hivecommons/.github/blob/main/SECURITY.md) instead of filing an issue.
+
+        This repo owns the formula, the `hive-contribute` wrapper and the SIF conversion. Problems in the
+        contributor relay itself (task handling, registration, backend CLIs) belong in
+        [hivecommons/hive](https://github.com/hivecommons/hive/issues).
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux amd64
+        - Linux arm64
+        - macOS Apple silicon
+        - macOS Intel
+        - Windows (WSL2)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it fail?
+      options:
+        - brew tap / brew install
+        - brew test or brew upgrade
+        - hive-contribute fails to start the container
+        - hive-contribute starts, but the relay misbehaves
+        - Formula generation or conversion workflow (maintainers)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: The output of `hive-contribute --wrapper-print-runtime`, or the `HIVE_CONTRIBUTE_RUNTIME` value you set.
+      options:
+        - apptainer
+        - docker
+        - podman
+        - lima
+        - gvisor
+        - none / not reached
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wrapper version
+      description: The output of `hive-contribute --wrapper-version` (version, channel and pinned image), or the formula version from `brew info hivecommons/hive/contribute`.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The commands you ran, including any `HIVE_CONTRIBUTE_*` variables you set.
+      placeholder: |
+        1. brew install hivecommons/hive/contribute
+        2. hive-contribute
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      description: Relevant `brew` or `hive-contribute` output. Redact tokens and API keys first.
+      render: shell
