@@ -85,6 +85,6 @@ The printed `image=` digest must match the intended known-good digest.
 ## Follow-up
 
 - Record the bad digest, the window it was live on `main`, and the cause in an
-  issue on this repository.
+  issue on this repository, using [postmortem-template.md](postmortem-template.md).
 - If the cause was missing validation, extend `.github/workflows/ci.yml` or
   `scripts/generate-formula.py` so it is caught before merge.
