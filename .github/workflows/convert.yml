@@ -43,6 +43,8 @@ jobs:
       digest: ${{ steps.meta.outputs.digest }}
       short: ${{ steps.meta.outputs.short }}
       tag: ${{ steps.meta.outputs.tag }}
+      formula: ${{ steps.meta.outputs.formula }}
+      binary: ${{ steps.meta.outputs.binary }}
       version: ${{ steps.meta.outputs.version }}
       image_ref: ${{ steps.meta.outputs.image_ref }}
       exists: ${{ steps.exists.outputs.exists }}
@@ -67,9 +69,13 @@ jobs:
           if [ "$channel" = stable ]; then
             tag="contribute-${short}"
             version="${short}"
+            formula=contribute
+            binary=hive-contribute
           else
             tag="contribute-candidate-${short}"
             version="candidate-${short}"
+            formula=contribute-candidate
+            binary=hive-contribute-candidate
           fi
           {
             echo "channel=$channel"
@@ -77,6 +83,8 @@ jobs:
             echo "short=$short"
             echo "tag=$tag"
             echo "version=$version"
+            echo "formula=$formula"
+            echo "binary=$binary"
             echo "image_ref=$IMAGE@$digest"
           } >> "$GITHUB_OUTPUT"
 
@@ -208,20 +216,15 @@ jobs:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           DIGEST: ${{ needs.resolve.outputs.digest }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          FORMULA: ${{ needs.resolve.outputs.formula }}
+          BINARY: ${{ needs.resolve.outputs.binary }}
         run: |
           set -euo pipefail
           amd_sha=$(cut -d' ' -f1 dist/hive-contributor-amd64.sif.sha256)
           arm_sha=$(cut -d' ' -f1 dist/hive-contributor-arm64.sif.sha256)
-          if [ "$CHANNEL" = stable ]; then
-            formula=contribute
-            binary=hive-contribute
-          else
-            formula=contribute-candidate
-            binary=hive-contribute-candidate
-          fi
           ./scripts/generate-formula.py \
-            --formula "$formula" \
-            --binary "$binary" \
+            --formula "$FORMULA" \
+            --binary "$BINARY" \
             --channel "$CHANNEL" \
             --version "$VERSION" \
             --digest "$DIGEST" \
@@ -230,7 +233,7 @@ jobs:
             --amd64-sha256 "$amd_sha" \
             --arm64-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/hive-contributor-arm64.sif" \
             --arm64-sha256 "$arm_sha" \
-            --output "Formula/${formula}.rb"
+            --output "Formula/${FORMULA}.rb"
 
       - name: Smoke generated wrapper syntax
         run: |
@@ -240,24 +243,24 @@ jobs:
 
       - name: Validate generated formula like Tap CI
         env:
-          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          FORMULA: ${{ needs.resolve.outputs.formula }}
+          BINARY: ${{ needs.resolve.outputs.binary }}
         run: |
           set -euo pipefail
           # This job holds a write token, so never bootstrap brew from a remote
           # script here: use the runner image's Homebrew or fail the step.
           export PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
           command -v brew >/dev/null 2>&1 || { echo "::error::brew is not on the runner image; cannot validate the generated formula" >&2; exit 1; }
-          if [ "$CHANNEL" = stable ]; then formula=contribute; binary=hive-contribute; else formula=contribute-candidate; binary=hive-contribute-candidate; fi
           # `brew tap <path>` clones committed HEAD, so overlay the uncommitted
           # generated formula into the tap before auditing it.
           brew tap hivecommons/hive "$PWD"
           mkdir -p "$(brew --repository hivecommons/hive)/Formula"
-          cp "Formula/${formula}.rb" "$(brew --repository hivecommons/hive)/Formula/${formula}.rb"
-          brew style "Formula/${formula}.rb"
-          brew audit --strict --new "hivecommons/hive/${formula}"
-          brew install --build-from-source "hivecommons/hive/${formula}"
-          "$binary" --help
-          brew test "hivecommons/hive/${formula}"
+          cp "Formula/${FORMULA}.rb" "$(brew --repository hivecommons/hive)/Formula/${FORMULA}.rb"
+          brew style "Formula/${FORMULA}.rb"
+          brew audit --strict --new "hivecommons/hive/${FORMULA}"
+          brew install --build-from-source "hivecommons/hive/${FORMULA}"
+          "$BINARY" --help
+          brew test "hivecommons/hive/${FORMULA}"
 
       - name: Commit generated formula
         env:
@@ -265,6 +268,7 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           DIGEST: ${{ needs.resolve.outputs.digest }}
+          FORMULA: ${{ needs.resolve.outputs.formula }}
         run: |
           set -euo pipefail
           if [ -z "$(git status --porcelain -- Formula)" ]; then
@@ -274,11 +278,7 @@ jobs:
           # One long-lived branch per channel: each run force-pushes the newest
           # formula onto it and edits the existing PR instead of opening a new
           # PR per tag, which left one unmerged PR behind every 6-hour run.
-          if [ "$CHANNEL" = stable ]; then
-            branch="generated/contribute"
-          else
-            branch="generated/contribute-candidate"
-          fi
+          branch="generated/${FORMULA}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
@@ -287,14 +287,8 @@ jobs:
             -m "Image digest: ${DIGEST}" \
             -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
           git push --force origin "$branch"
-          if [ "$CHANNEL" = stable ]; then
-            formula=contribute
-            title="✨ tap: generated contribute formula ${TAG}"
-          else
-            formula=contribute-candidate
-            title="✨ tap: generated contribute-candidate formula ${TAG}"
-          fi
-          body="Generated Formula/${formula}.rb for ${TAG}.\n\nImage digest: ${DIGEST}\nRelease: ${{ steps.release.outputs.url }}"
+          title="✨ tap: generated ${FORMULA} formula ${TAG}"
+          body="Generated Formula/${FORMULA}.rb for ${TAG}.\n\nImage digest: ${DIGEST}\nRelease: ${{ steps.release.outputs.url }}"
           existing=$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "$title" --body "$body"
@@ -304,7 +298,7 @@ jobs:
           # Retire per-tag PRs from earlier runs of this channel; the branch
           # above now carries their content.
           gh pr list --state open --json number,headRefName \
-            --jq ".[] | select(.headRefName | startswith(\"generated/${formula}-\")) | .number" |
+            --jq ".[] | select(.headRefName | startswith(\"generated/${FORMULA}-\")) | .number" |
           while read -r stale; do
             [ "$stale" = "$existing" ] && continue
             gh pr close "$stale" --delete-branch \
