@@ -350,6 +350,47 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stderr)
         self.assertFalse(self.stub_out.exists())
 
+    def test_home_workspace_is_refused_under_unnormalised_spellings(self):
+        self.add_stub("apptainer")
+        home_link = self.tmp / "home-link"
+        home_link.symlink_to(self.home)
+        parent_link = self.tmp / "tmp-link"
+        parent_link.symlink_to(self.tmp)
+        home = str(self.home)
+        spellings = (
+            f"{home}/.",
+            f"{home}//",
+            f"{home}/x/..",
+            f"{home}/./x/../.",
+            "/" + home,
+            home.replace("/", "//", 1),
+            str(home_link),
+            str(home_link) + "/project/..",
+            str(parent_link),
+            str(parent_link / "home"),
+        )
+        for ws in spellings:
+            proc = self.run_wrapper(
+                env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": ws},
+            )
+            self.assertEqual(proc.returncode, 2, f"{ws}: {proc.stderr}")
+            self.assertIn("refusing to use", proc.stderr, ws)
+            self.assertFalse(self.stub_out.exists(), f"runtime must not start for {ws}")
+        # Relative spellings resolve against $PWD, so `cd ~ && HIVE_WORKSPACE_DIR=.` is $HOME.
+        for ws in (".", "./", "x/..", "./x/../."):
+            proc = self.run_wrapper(
+                env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": ws}, cwd=self.home,
+            )
+            self.assertEqual(proc.returncode, 2, f"{ws}: {proc.stderr}")
+            self.assertIn("refusing to use", proc.stderr, ws)
+            self.assertFalse(self.stub_out.exists(), f"runtime must not start for {ws}")
+        # A symlinked $HOME is still refused when the workspace is spelled via the real path.
+        proc = self.run_wrapper(
+            env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": home, "HOME": str(home_link)},
+        )
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertFalse(self.stub_out.exists())
+
     def test_home_workspace_override_and_sibling_dirs_are_allowed(self):
         self.add_stub("apptainer")
         proc = self.run_wrapper(
@@ -363,11 +404,16 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertIn(f"{self.home}:/home/dev/workspace", argv)
 
-        # A directory inside $HOME, or one that merely shares a prefix, is fine.
-        for ws in (self.home / "project", Path(str(self.home) + "-other")):
+        # A directory inside $HOME, one that merely shares a prefix, an
+        # unnormalised spelling of a project directory, or a symlink to one is fine.
+        (self.home / "project").mkdir()
+        project_link = self.tmp / "project-link"
+        project_link.symlink_to(self.home / "project")
+        for ws in (self.home / "project", Path(str(self.home) + "-other"),
+                   self.home / "." / "project", self.home / "x" / ".." / "project", project_link):
             self.stub_out.unlink()
             proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": str(ws)})
-            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.returncode, 0, f"{ws}: {proc.stderr}")
             argv, _ = self.stub_record()
             self.assertIn(f"{ws}:/home/dev/workspace", argv)
 

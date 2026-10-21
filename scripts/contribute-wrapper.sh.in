@@ -55,15 +55,27 @@
       container_config="/home/dev/.config/hive"
       case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
 
+      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
+
       # The workspace is bound read-write. Binding $HOME itself, an ancestor
       # of it, or / would hand the container every credential directory the
       # wrapper deliberately leaves unmounted (~/.ssh, ~/.config/gh, ~/.aws, …),
-      # so refuse unless the caller opts in explicitly.
+      # so refuse unless the caller opts in explicitly. Both sides are
+      # canonicalised first so '.', '..', '//' and symlink spellings of $HOME
+      # cannot slip past a lexical comparison; the directories exist by now.
+      canonical_dir() {
+        local resolved
+        resolved=$(cd -P -- "$1" 2>/dev/null && pwd -P) || resolved="$1"
+        # POSIX leaves a leading "//" implementation-defined and bash keeps it.
+        while [[ "$resolved" == //* ]]; do resolved="${resolved#/}"; done
+        printf '%s' "${resolved%/}"
+      }
       workspace_exposes_home() {
-        local ws="${1%/}" home="${HOME%/}"
+        local ws home
+        ws=$(canonical_dir "$1")
+        home=$(canonical_dir "$HOME")
         [[ -z "$ws" || "$ws" == "$home" || "$home/" == "$ws/"* ]]
       }
-      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then

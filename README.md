@@ -101,8 +101,9 @@ The wrapper forwards the inputs the contributor relay needs:
   `/home/dev/workspace` and exported as `HIVE_WORKSPACE_DIR` inside the
   container. Because that bind would carry every credential directory under
   `$HOME` into the container, the wrapper refuses to start (exit 2) when the
-  workspace is `$HOME`, an ancestor of it, or `/` — for example when run from
-  your home directory. Run it from a project directory or set
+  workspace resolves to `$HOME`, an ancestor of it, or `/` — for example when
+  run from your home directory, or via `.`, `..` or a symlink that lands
+  there. Run it from a project directory or set
   `HIVE_WORKSPACE_DIR`; `HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1` overrides.
 
 ## Persistent state and wrapper flags
