@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import pty
 import re
 import shutil
 import stat
@@ -235,7 +236,12 @@ class WrapperTests(unittest.TestCase):
         path.write_text(self.STUB)
         path.chmod(0o755)
 
-    def run_wrapper(self, *argv, env=None, cwd=None):
+    def run_wrapper(self, *argv, env=None, cwd=None, tty=False):
+        """Run the wrapper; with tty=True, stdin/stdout sit on a pseudo-terminal.
+
+        stderr is always captured so assertion messages stay diagnosable. The
+        wrapper only tests ``-t 0 && -t 1``, so stderr need not be on the pty.
+        """
         full_env = {
             "PATH": str(self.bindir),
             "HOME": str(self.home),
@@ -244,11 +250,21 @@ class WrapperTests(unittest.TestCase):
         }
         if env:
             full_env.update(env)
-        return subprocess.run(
-            ["bash", str(self.wrapper), *argv],
-            env=full_env, cwd=cwd or self.tmp, capture_output=True, text=True,
-            stdin=subprocess.DEVNULL,
-        )
+        cmd = ["bash", str(self.wrapper), *argv]
+        if not tty:
+            return subprocess.run(
+                cmd, env=full_env, cwd=cwd or self.tmp, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL,
+            )
+        controller, follower = pty.openpty()
+        try:
+            return subprocess.run(
+                cmd, env=full_env, cwd=cwd or self.tmp, text=True, timeout=30,
+                stdin=follower, stdout=follower, stderr=subprocess.PIPE,
+            )
+        finally:
+            os.close(follower)
+            os.close(controller)
 
     def stub_record(self):
         lines = self.stub_out.read_text().splitlines()
@@ -530,35 +546,12 @@ class WrapperTests(unittest.TestCase):
         volumes = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
         self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", volumes)
 
-    def run_wrapper_on_pty(self, *argv, env=None):
-        """Run the wrapper with stdin/stdout/stderr on a pseudo-terminal."""
-        import pty
-
-        full_env = {
-            "PATH": str(self.bindir),
-            "HOME": str(self.home),
-            "STUB_OUT": str(self.stub_out),
-            "HIVE_WORKSPACE_DIR": str(self.tmp / "workspace"),
-            **(env or {}),
-        }
-        controller, follower = pty.openpty()
-        try:
-            proc = subprocess.run(
-                ["bash", str(self.wrapper), *argv],
-                env=full_env, cwd=self.tmp,
-                stdin=follower, stdout=follower, stderr=follower,
-            )
-        finally:
-            os.close(follower)
-            os.close(controller)
-        return proc
-
     def test_docker_hand_off_allocates_a_tty_only_when_attached_to_one(self):
         for engine in ("docker", "podman"):
             self.add_stub(engine)
             with self.subTest(engine=engine):
-                proc = self.run_wrapper_on_pty("relay", env={"HIVE_CONTRIBUTE_RUNTIME": engine})
-                self.assertEqual(proc.returncode, 0)
+                proc = self.run_wrapper("relay", env={"HIVE_CONTRIBUTE_RUNTIME": engine}, tty=True)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
                 argv, _ = self.stub_record()
                 self.assertEqual(argv[:6], ["run", "--rm", "-i", "--name", "hive-contributor", "-t"])
                 self.assertEqual(argv.count("-t"), 1)
