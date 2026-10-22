@@ -247,6 +247,7 @@ class WrapperTests(unittest.TestCase):
         return subprocess.run(
             ["bash", str(self.wrapper), *argv],
             env=full_env, cwd=cwd or self.tmp, capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,
         )
 
     def stub_record(self):
@@ -504,7 +505,11 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         argv, env = self.stub_record()
-        self.assertEqual(argv[:3], ["run", "--rm", "-it"])
+        # stdin/stdout are not terminals under the test harness, so the wrapper
+        # must stay interactive (-i) without allocating a TTY (-t).
+        self.assertEqual(argv[:3], ["run", "--rm", "-i"])
+        self.assertNotIn("-t", argv)
+        self.assertNotIn("-it", argv)
         self.assertIn(self.args.image_ref, argv)
         self.assertEqual(argv[-1], "relay")
         self.assertNotIn("--runtime=runsc", argv)
@@ -713,13 +718,14 @@ class WrapperTests(unittest.TestCase):
                 proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine})
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 argv, _ = self.stub_record()
-                self.assertEqual(argv[:4], ["run", "--rm", "-it", "--name"])
+                self.assertEqual(argv[:4], ["run", "--rm", "-i", "--name"])
+                self.assertNotIn("-t", argv)
                 self.assertEqual(argv[4], "hive-contributor")
             with self.subTest(engine=engine, override=True):
                 proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, "HIVE_CONTAINER_NAME": "relay-two"})
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 argv, _ = self.stub_record()
-                self.assertEqual(argv[:5], ["run", "--rm", "-it", "--name", "relay-two"])
+                self.assertEqual(argv[:5], ["run", "--rm", "-i", "--name", "relay-two"])
                 self.assertEqual(argv.count("--name"), 1)
 
     # limactl stub: `list` always succeeds; `shell` snapshots the env file
