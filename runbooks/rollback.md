@@ -26,6 +26,13 @@ formula explicitly using one of the options below.
 
 ## Option A: revert the generated formula (fastest)
 
+Reverting restores the earlier formula's UTC generation timestamp, so its
+`<YYYYMMDD>.<HHMMSS>.<digest12>` version is lower than the bad formula's.
+Homebrew only upgrades to a greater version: `brew upgrade` will not roll back
+users who already installed the bad version. Those users must run
+`brew reinstall` as shown in [Verify](#verify) after the revert merges.
+New installs use the restored formula.
+
 1. Find the merge commit of the bad generated-formula PR on `main`.
 2. Revert it and open a PR against `main`:
 
@@ -73,6 +80,9 @@ regenerate the bad formula. Fix the channel upstream first, and do not delete
 release assets of a digest that upstream still serves.
 
 ## Verify
+
+For Option A, use `brew reinstall`, not `brew upgrade`, to replace an already
+installed bad version despite the restored formula's lower version number.
 
 ```sh
 brew update
