@@ -36,6 +36,7 @@ env:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
@@ -109,6 +110,7 @@ jobs:
   build:
     needs: resolve
     if: needs.resolve.outputs.exists != 'true'
+    timeout-minutes: 45
     permissions: {}
     strategy:
       fail-fast: false
@@ -170,6 +172,7 @@ jobs:
     needs: [resolve, build]
     if: needs.resolve.outputs.exists != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -309,6 +312,7 @@ jobs:
     needs: [resolve, build, publish]
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: write
     steps:
