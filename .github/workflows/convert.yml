@@ -197,7 +197,7 @@ jobs:
           FORCE: ${{ github.event.inputs.force || (github.event_name == 'push' && 'true') || 'false' }}
         run: |
           set -euo pipefail
-          notes="Hive contributor ${CHANNEL} converted to Apptainer SIF.\n\nImage: ${IMAGE_REF}\nDigest: ${DIGEST}"
+          notes=$(printf 'Hive contributor %s converted to Apptainer SIF.\n\nImage: %s\nDigest: %s' "$CHANNEL" "$IMAGE_REF" "$DIGEST")
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "$FORCE" != "true" ]; then
               echo "::error::Release $TAG already exists; refusing to clobber its assets (rerun with force=true to override)"
@@ -291,7 +291,7 @@ jobs:
             -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
           git push --force origin "$branch"
           title="✨ tap: generated ${FORMULA} formula ${TAG}"
-          body="Generated Formula/${FORMULA}.rb for ${TAG}.\n\nImage digest: ${DIGEST}\nRelease: ${{ steps.release.outputs.url }}"
+          body=$(printf 'Generated Formula/%s.rb for %s.\n\nImage digest: %s\nRelease: %s' "$FORMULA" "$TAG" "$DIGEST" "${{ steps.release.outputs.url }}")
           existing=$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "$title" --body "$body"
