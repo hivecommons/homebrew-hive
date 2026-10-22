@@ -124,6 +124,25 @@ class RenderTests(unittest.TestCase):
             text,
         )
 
+    def test_render_substitutes_every_template_placeholder(self):
+        # A placeholder added to contribute-wrapper.sh.in without a matching
+        # entry in render_wrapper() would ship verbatim inside the formula's
+        # heredoc; ruby -c, brew style and brew audit all accept a literal
+        # "@FOO@" inside a string, so only this test would notice.
+        placeholders = set(re.findall(r"@[A-Z_]+@", gen.WRAPPER_TEMPLATE.read_text(encoding="utf-8")))
+        self.assertTrue(placeholders, "template defines no @PLACEHOLDER@ tokens")
+        for args in (
+            make_args(),
+            make_args(formula="contribute-candidate", binary="hive-contribute-candidate",
+                      channel="candidate", version="candidate-0123456789ab"),
+        ):
+            with self.subTest(channel=args.channel):
+                text = gen.render(args)
+                self.assertEqual(re.findall(r"@[A-Z_]+@", text), [], text)
+        committed = SCRIPTS_DIR.parent / "Formula" / "contribute.rb"
+        if committed.exists():
+            self.assertEqual(re.findall(r"@[A-Z_]+@", committed.read_text(encoding="utf-8")), [])
+
     def test_render_escapes_quotes_in_inputs(self):
         text = gen.render(make_args(version='1"; system("id'))
         self.assertIn('version "1\\"; system(\\"id"', text)
