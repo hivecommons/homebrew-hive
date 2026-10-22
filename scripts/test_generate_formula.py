@@ -50,6 +50,7 @@ def make_args(**overrides) -> argparse.Namespace:
         binary="hive-contribute",
         channel="stable",
         version="8d0610f72958",
+        generated_at="2026-10-22T09:45:00+00:00",
         digest="sha256:" + "8d" * 32,
         image_ref="ghcr.io/hivecommons/hive-contributor@sha256:" + "8d" * 32,
         amd64_url="https://github.com/hivecommons/homebrew-hive/releases/download/contribute-8d0610f72958/hive-contributor-amd64.sif",
@@ -95,7 +96,8 @@ class RenderTests(unittest.TestCase):
         text = gen.render(args)
         self.assertIn("class Contribute < Formula", text)
         self.assertIn('desc "Hive contribute relay wrapper"\n', text)
-        self.assertIn(f'version "{args.version}"', text)
+        self.assertIn('version "20261022.094500.8d0610f72958"', text)
+        self.assertNotIn("revision", text)
         self.assertIn(f'url "{args.arm64_url}"\n    sha256 "{args.arm64_sha256}"', text)
         self.assertIn(f'url "{args.amd64_url}"\n    sha256 "{args.amd64_sha256}"', text)
         self.assertIn('=> "hive-contributor-stable.sif"', text)
@@ -121,9 +123,45 @@ class RenderTests(unittest.TestCase):
         self.assertIn('CHANNEL="candidate"', text)
         self.assertIn("tracks the candidate pre-release channel", text)
         self.assertIn(
-            'assert_match(\n      "hive-contribute-candidate candidate-0123456789ab",',
+            'assert_match(\n      "hive-contribute-candidate 20261022.094500.candidate-0123456789ab",',
             text,
         )
+
+    def test_formula_version_is_stamp_then_digest(self):
+        self.assertEqual(gen.formula_version(make_args()), "20261022.094500.8d0610f72958")
+        # Naive and non-UTC stamps are normalised to UTC.
+        self.assertEqual(gen.formula_version(make_args(generated_at="2026-10-22T09:45:00")),
+                         "20261022.094500.8d0610f72958")
+        self.assertEqual(gen.formula_version(make_args(generated_at="2026-10-22T05:45:00-04:00")),
+                         "20261022.094500.8d0610f72958")
+        self.assertEqual(gen.formula_version(make_args(generated_at="2026-10-22T09:45:00Z")),
+                         "20261022.094500.8d0610f72958")
+
+    def test_formula_version_orders_every_later_generation_above_every_earlier_one(self):
+        # Homebrew's Version splits on dots and compares numeric tokens
+        # numerically, so the two leading stamps decide the order regardless of
+        # how the digest tokens would sort: a regenerated wrapper under the same
+        # digest, and a new digest that starts with a letter, must both win.
+        def brew_key(version: str):
+            return tuple(int(tok) for tok in version.split(".")[:2])
+
+        earlier = gen.formula_version(make_args(generated_at="2026-10-21T15:00:00+00:00", version="d08dd5046158"))
+        same_digest_later = gen.formula_version(make_args(generated_at="2026-10-21T17:18:01+00:00", version="d08dd5046158"))
+        lower_sorting_digest_later = gen.formula_version(make_args(generated_at="2026-10-22T00:00:00+00:00", version="a3f0123456ab"))
+        self.assertLess(brew_key(earlier), brew_key(same_digest_later))
+        self.assertLess(brew_key(same_digest_later), brew_key(lower_sorting_digest_later))
+        self.assertTrue(earlier.endswith(".d08dd5046158"))
+        self.assertTrue(lower_sorting_digest_later.endswith(".a3f0123456ab"))
+
+    def test_main_rejects_malformed_generated_at(self):
+        proc = subprocess.run(
+            [sys.executable, str(GENERATOR), "--version", "v", "--generated-at", "yesterday",
+             "--digest", "d", "--image-ref", "i", "--amd64-url", "u", "--amd64-sha256", "s",
+             "--arm64-url", "u", "--arm64-sha256", "s", "--output", os.devnull],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("--generated-at", proc.stderr)
 
     def test_render_substitutes_every_template_placeholder(self):
         # A placeholder added to contribute-wrapper.sh.in without a matching
@@ -151,13 +189,13 @@ class RenderTests(unittest.TestCase):
 
     def test_render_escapes_quotes_in_inputs(self):
         text = gen.render(make_args(version='1"; system("id'))
-        self.assertIn('version "1\\"; system(\\"id"', text)
-        self.assertNotIn('version "1"; system("id"', text)
+        self.assertIn('version "20261022.094500.1\\"; system(\\"id"', text)
+        self.assertNotIn('system("id"', text)
 
     def test_formula_test_block_matches_wrapper_version_output(self):
         args = make_args()
         text = gen.render(args)
-        self.assertIn(f'"hive-contribute {args.version}"', text)
+        self.assertIn(f'"hive-contribute {gen.formula_version(args)}"', text)
         self.assertIn('shell_output("#{bin}/hive-contribute --wrapper-version")', text)
 
     @unittest.skipUnless(shutil.which("ruby"), "ruby not installed")
@@ -176,6 +214,7 @@ class RenderTests(unittest.TestCase):
             cmd = [
                 sys.executable, str(GENERATOR),
                 "--version", args.version,
+                "--generated-at", args.generated_at,
                 "--digest", args.digest,
                 "--image-ref", args.image_ref,
                 "--amd64-url", args.amd64_url,
@@ -292,7 +331,7 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(
             proc.stdout.strip(),
-            f"hive-contribute {self.args.version} channel=stable image={self.args.image_ref}",
+            f"hive-contribute {gen.formula_version(self.args)} channel=stable image={self.args.image_ref}",
         )
 
     def test_help_flags_print_usage(self):

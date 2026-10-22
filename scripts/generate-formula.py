@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 
 WRAPPER_TEMPLATE = Path(__file__).with_name("contribute-wrapper.sh.in")
@@ -16,9 +17,32 @@ def class_name(formula: str) -> str:
     return ''.join(part.capitalize() for part in formula.replace('_', '-').split('-'))
 
 
+def parse_generated_at(value: str) -> datetime:
+    stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.astimezone(timezone.utc)
+
+
+def formula_version(args: argparse.Namespace) -> str:
+    """Return a version that grows on every generation.
+
+    Homebrew upgrades a keg only when the formula version compares greater
+    than the installed one, and it compares digest strings token by token
+    (letters sort below digits; "a1"/"b2" even parse as alpha/beta
+    pre-releases). A bare digest is therefore not orderable, and a wrapper
+    fix regenerated under the same digest never reaches installed users.
+    Two leading numeric tokens from the generation time make every later
+    generation greater than every earlier one; the digest stays for
+    traceability.
+    """
+    stamp = parse_generated_at(args.generated_at)
+    return f"{stamp:%Y%m%d.%H%M%S}.{args.version}"
+
+
 def render_wrapper(args: argparse.Namespace, sif: str, caveat_channel: str) -> str:
     values = {
-        "@VERSION@": ruby_quote(args.version),
+        "@VERSION@": ruby_quote(formula_version(args)),
         "@CHANNEL@": ruby_quote(args.channel),
         "@IMAGE_REF@": ruby_quote(args.image_ref),
         "@DIGEST@": ruby_quote(args.digest),
@@ -45,7 +69,7 @@ def render(args: argparse.Namespace) -> str:
 class {klass} < Formula
   desc "Hive contribute relay wrapper{prerelease}"
   homepage "https://github.com/hivecommons/hive"
-  version "{ruby_quote(args.version)}"
+  version "{ruby_quote(formula_version(args))}"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
@@ -95,7 +119,7 @@ class {klass} < Formula
 
   test do
     assert_match(
-      "{binary} {ruby_quote(args.version)}",
+      "{binary} {ruby_quote(formula_version(args))}",
       shell_output("#{{bin}}/{binary} --wrapper-version"),
     )
   end
@@ -108,7 +132,10 @@ def main() -> None:
     parser.add_argument('--formula', default='contribute')
     parser.add_argument('--binary', default='hive-contribute')
     parser.add_argument('--channel', choices=['stable', 'candidate'], default='stable')
-    parser.add_argument('--version', required=True)
+    parser.add_argument('--version', required=True,
+                        help='image digest prefix; the formula version is <YYYYMMDD>.<HHMMSS>.<this>')
+    parser.add_argument('--generated-at', default=datetime.now(timezone.utc).isoformat(),
+                        help='ISO-8601 generation time used for the version prefix (default: now, UTC)')
     parser.add_argument('--digest', required=True)
     parser.add_argument('--image-ref', required=True)
     parser.add_argument('--amd64-url', required=True)
@@ -117,6 +144,10 @@ def main() -> None:
     parser.add_argument('--arm64-sha256', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
+    try:
+        parse_generated_at(args.generated_at)
+    except ValueError as exc:
+        parser.error(f"--generated-at: {exc}")
     Path(args.output).write_text(render(args), encoding='utf-8')
 
 

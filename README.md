@@ -131,7 +131,11 @@ forwarded environment in the state directory and removes it when `limactl` exits
 These diagnostic flags do not launch the relay; pass each as the first argument:
 
 - `hive-contribute --wrapper-version` prints the wrapper version, channel, and
-  pinned image reference, then exits.
+  pinned image reference, then exits. The version is
+  `<YYYYMMDD>.<HHMMSS>.<digest12>`: the UTC time the formula was generated,
+  then the first 12 hex characters of the image digest. The time prefix makes
+  every regeneration sort above the previous one, so `brew upgrade` also picks
+  up wrapper changes published under an unchanged image digest.
 - `hive-contribute --wrapper-print-runtime` prints the selected runtime, or
   `none` with exit status 1 when none is found. This is a selection diagnostic,
   not a runtime health check: Linux's automatic selection reports `apptainer`
