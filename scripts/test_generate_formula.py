@@ -618,6 +618,77 @@ class WrapperTests(unittest.TestCase):
         self.assertNotIn("GH_TOKEN=forged", forwarded_names)
         self.assertNotIn("NOT_FORWARDED_SECRET", forwarded_names)
 
+    @staticmethod
+    def allow_list_patterns() -> list:
+        """Every pattern in the wrapper's env_name_allowed() case arms that returns 0."""
+        template = gen.WRAPPER_TEMPLATE.read_text(encoding="utf-8")
+        match = re.search(r"env_name_allowed\(\) \{\n(.*?)\n\s*\}\n", template, re.S)
+        if not match:
+            raise AssertionError("env_name_allowed() not found in wrapper template")
+        patterns = []
+        for arm in re.findall(r"^\s*([A-Z0-9_*|]+)\)\n\s*return 0 ;;", match.group(1), re.M):
+            patterns.extend(arm.split("|"))
+        return patterns
+
+    # The forwarding contract: exactly these families reach the container.
+    # Changing the wrapper's allow list means changing this list in the same PR.
+    ALLOWED_FAMILIES = (
+        "HIVE_*", "AGENT_*", "CONTRIBUTOR_MODE", "GH_TOKEN", "GITHUB_TOKEN", "GITHUB_REPOSITORY",
+        "GITHUB_ACTOR", "GIT_AUTHOR_*", "GIT_COMMITTER_*",
+        "ANTHROPIC_*", "CLAUDE_*", "OPENAI_*", "CODEX_*", "COPILOT_*", "BOBSHELL_*", "GOOSE_*",
+        "META_API_KEY", "MUSE_*",
+        "OMP_*", "PI_*", "KILO_*", "GEMINI_*", "GOOGLE_*", "ANTIGRAVITY_*", "AWS_*", "AZURE_*",
+        "OLLAMA_*", "LITELLM_*", "XAI_*", "GROQ_*",
+    )
+
+    # Names the wrapper must never forward: close spellings of allowed names,
+    # host plumbing, and credentials for tools the relay does not run.
+    NEVER_FORWARDED = (
+        "GITHUB_SHA", "GITHUB_ACTIONS", "GITHUB_WORKSPACE", "GH_TOKEN_BACKUP", "GH_HOST",
+        "GIT_SSH_COMMAND", "GIT_DIR", "GIT_CONFIG_GLOBAL", "META_SECRET", "CONTRIBUTOR_MODE_OLD",
+        "SSH_AUTH_SOCK", "KUBECONFIG", "DOCKER_HOST", "NPM_TOKEN", "PYPI_TOKEN",
+        "SLACK_TOKEN", "DATABASE_URL", "HIVELESS", "XHIVE_TOKEN",
+    )
+
+    def test_env_allow_list_forwards_every_family_and_nothing_else(self):
+        # The allow-list decides which host variables reach the container, so
+        # each case arm needs a representative: an arm dropped or narrowed by
+        # mistake would silently stop forwarding a backend's credentials, and
+        # an arm widened would leak host state. The patterns are read from the
+        # template so a family added without a probe fails here.
+        patterns = self.allow_list_patterns()
+        self.assertEqual(sorted(patterns), sorted(self.ALLOWED_FAMILIES))
+        probes = {}
+        for pattern in patterns:
+            if pattern.endswith("*"):
+                self.assertNotIn("*", pattern[:-1], f"only a trailing glob is modelled: {pattern}")
+                probes[pattern[:-1] + "PROBE"] = pattern
+            else:
+                probes[pattern] = pattern
+        for name in self.NEVER_FORWARDED:
+            self.assertNotIn(name, probes, f"{name} is in the allow list; pick another negative")
+
+        for engine, flag in (("apptainer", None), ("docker", "-e")):
+            with self.subTest(engine=engine):
+                self.add_stub(engine)
+                env = {"HIVE_CONTRIBUTE_RUNTIME": engine}
+                env.update({name: f"value-of-{name}" for name in probes})
+                env.update({name: "must-not-leak" for name in self.NEVER_FORWARDED})
+                proc = self.run_wrapper("relay", env=env)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv, stub_env = self.stub_record()
+                if flag:
+                    forwarded = {argv[i + 1] for i, a in enumerate(argv) if a == flag}
+                    value_of = lambda n: n in forwarded and stub_env.get(n)  # noqa: E731
+                else:
+                    value_of = lambda n: self.forwarded(argv, stub_env, n)  # noqa: E731
+                for name, pattern in probes.items():
+                    self.assertEqual(value_of(name), f"value-of-{name}", f"{pattern} not forwarded via {name}")
+                for name in self.NEVER_FORWARDED:
+                    self.assertFalse(value_of(name), f"{name} must not be forwarded")
+                    self.assertNotIn(f"APPTAINERENV_{name}", stub_env)
+                self.assertNotIn("must-not-leak", " ".join(argv))
+
     def run_credential_helper(self, helper_value: str, env: dict) -> str:
         """Run the git credential helper body the way git would (leading '!' stripped)."""
         self.assertTrue(helper_value.startswith("!"), helper_value)
