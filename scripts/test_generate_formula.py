@@ -754,6 +754,36 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertIn("--runtime=runsc", argv)
 
+    def test_gvisor_runtime_picks_podman_when_docker_absent(self):
+        self.add_stub("podman")
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, _ = self.stub_record()
+        self.assertIn("--runtime=runsc", argv)
+        self.assertIn("HIVE_CONTAINER_RUNTIME=podman", argv)
+
+    def test_gvisor_runtime_fails_when_neither_docker_nor_podman(self):
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
+        self.assertEqual(proc.returncode, 127, proc.stderr)
+        self.assertIn("needs docker or podman", proc.stderr)
+
+    def test_print_runtime_gvisor_reports_docker_when_available(self):
+        self.add_stub("docker")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "docker")
+
+    def test_print_runtime_gvisor_reports_podman_when_docker_absent(self):
+        self.add_stub("podman")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "podman")
+
+    def test_print_runtime_gvisor_reports_none_when_neither_present(self):
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout.strip(), "none")
+
     def test_podman_runtime_selects_podman(self):
         self.add_stub("podman")
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "podman"})
