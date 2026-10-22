@@ -143,6 +143,11 @@ class RenderTests(unittest.TestCase):
         if committed.exists():
             self.assertEqual(re.findall(r"@[A-Z_]+@", committed.read_text(encoding="utf-8")), [])
 
+    def test_render_does_not_force_a_tty_for_docker_run(self):
+        text = gen.render(make_args())
+        self.assertNotIn("run --rm -it", text)
+        self.assertIn("run --rm -i --name", text)
+
     def test_render_escapes_quotes_in_inputs(self):
         text = gen.render(make_args(version='1"; system("id'))
         self.assertIn('version "1\\"; system(\\"id"', text)

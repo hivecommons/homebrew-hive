@@ -114,9 +114,10 @@
       }
 
       collect_env_names() {
-        env | while IFS='=' read -r name _; do
+        local name
+        while IFS= read -r name; do
           env_name_allowed "$name" && printf '%s\n' "$name"
-        done | sort -u
+        done < <(compgen -e) | sort -u
       }
 
       add_existing_bind() {
@@ -176,7 +177,8 @@
 
       docker_like_run() {
         local engine="$1"
-        local -a args=(run --rm -it --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
+        local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
+        [[ -t 0 && -t 1 ]] && args+=(-t)
         if [[ "$engine" == "docker" && "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
           args+=(--runtime=runsc)
         elif [[ "$engine" == "podman" && "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
