@@ -1115,12 +1115,16 @@ class WrapperTests(unittest.TestCase):
     # fallthrough (an explicit request silently landing on another engine) is
     # caught wherever it appears instead of only at the sites already tested.
 
-    ENGINES = ("apptainer", "docker", "podman", "limactl")
-    RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima")
+    # An installed binary is not necessarily a supported runtime (#138).
+    ENGINES = ("apptainer", "docker", "podman", "limactl", "nerdctl")
+    RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima", "nerdctl")
+    REJECTED = object()
 
-    @staticmethod
-    def expected_engine(host, requested, installed):
-        """Engine the wrapper must hand off to, or None for 'nothing usable'."""
+    @classmethod
+    def expected_engine(cls, host, requested, installed):
+        """Engine to run, None for missing engines, or REJECTED for invalid input."""
+        if requested not in ("auto", "apptainer", "docker", "podman", "gvisor", "lima"):
+            return cls.REJECTED
         if requested == "auto":
             if host == "linux":
                 return "apptainer" if "apptainer" in installed else None
@@ -1166,7 +1170,10 @@ class WrapperTests(unittest.TestCase):
                 want = self.expected_engine(host, requested, installed)
 
                 proc = self.run_wrapper("--wrapper-print-runtime", env=env)
-                if host == "linux" and requested == "auto":
+                if want is self.REJECTED:
+                    self.assertEqual((proc.returncode, proc.stdout), (2, ""), proc.stderr)
+                    self.assertEqual(proc.stderr, f"unknown HIVE_CONTRIBUTE_RUNTIME={requested}\n")
+                elif host == "linux" and requested == "auto":
                     # Linux auto never probes: apptainer is the only choice.
                     self.assertEqual((proc.returncode, proc.stdout.strip()), (0, "apptainer"))
                 elif want is None:
@@ -1176,7 +1183,11 @@ class WrapperTests(unittest.TestCase):
                 self.assertFalse(self.stub_out.exists(), "print-runtime must not exec an engine")
 
                 proc = self.run_wrapper("relay-arg", env=env)
-                if want is None:
+                if want is self.REJECTED:
+                    self.assertEqual((proc.returncode, proc.stdout), (2, ""), proc.stderr)
+                    self.assertEqual(proc.stderr, f"unknown HIVE_CONTRIBUTE_RUNTIME={requested}\n")
+                    self.assertFalse(self.stub_out.exists(), "invalid runtime must not exec an engine")
+                elif want is None:
                     self.assertEqual(proc.returncode, 127, proc.stderr)
                     self.assertFalse(self.stub_out.exists(), f"exec'd an engine despite none usable: {proc.stderr}")
                 else:

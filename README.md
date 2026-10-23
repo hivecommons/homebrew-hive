@@ -136,11 +136,13 @@ These diagnostic flags do not launch the relay; pass each as the first argument:
   then the first 12 hex characters of the image digest. The time prefix makes
   every regeneration sort above the previous one, so `brew upgrade` also picks
   up wrapper changes published under an unchanged image digest.
-- `hive-contribute --wrapper-print-runtime` prints the selected runtime, or
-  `none` with exit status 1 when none is found. This is a selection diagnostic,
-  not a runtime health check: Linux's automatic selection reports `apptainer`
-  without checking that it is installed. It exits before creating any of the
-  directories above.
+- `hive-contribute --wrapper-print-runtime` prints the selected runtime with exit
+  status 0, or `none` with exit status 1 when none is found. An unrecognised
+  `HIVE_CONTRIBUTE_RUNTIME` prints `unknown HIVE_CONTRIBUTE_RUNTIME=…` on stderr
+  and exits with status 2 without printing a runtime name. This is a selection
+  diagnostic, not a runtime health check: Linux's automatic selection reports
+  `apptainer` without checking that it is installed. It exits before creating
+  any of the directories above.
 - `hive-contribute --help` (or `-h`) prints wrapper usage.
 
 ## Automation
