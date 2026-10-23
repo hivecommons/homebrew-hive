@@ -139,7 +139,8 @@ These diagnostic flags do not launch the relay; pass each as the first argument:
 - `hive-contribute --wrapper-print-runtime` prints the selected runtime, or
   `none` with exit status 1 when none is found. This is a selection diagnostic,
   not a runtime health check: Linux's automatic selection reports `apptainer`
-  without checking that it is installed. It still creates the directories above.
+  without checking that it is installed. It exits before creating any of the
+  directories above.
 - `hive-contribute --help` (or `-h`) prints wrapper usage.
 
 ## Automation
