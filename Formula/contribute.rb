@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "d08dd5046158"
+  version "20261023.124028.0fe184775141"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-arm64.sif"
-    sha256 "dda41e5b852c57f16837f88ac8bd4effc8475a7693124018e257f3a411256a1f"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-0fe184775141/hive-contributor-arm64.sif"
+    sha256 "62f8253e6a67430786e7b8825bf8124087a48940c7eef9797151caacdd023e67"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d08dd5046158/hive-contributor-amd64.sif"
-    sha256 "d64eeea005ed97f718be2efc0ad1e0e3005603c1fd139a4e66380e4f8cf6f0b3"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-0fe184775141/hive-contributor-amd64.sif"
+    sha256 "394de7c9d2d560964eea4bc35680d63cf7d496ff43c78e9c989ab9a5a8da015f"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="d08dd5046158"
+      WRAPPER_VERSION="20261023.124028.0fe184775141"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948"
-      IMAGE_DIGEST="sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb"
+      IMAGE_DIGEST="sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
 
       usage() {
@@ -80,8 +80,6 @@ class Contribute < Formula
       container_config="/home/dev/.config/hive"
       case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
 
-      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
-
       # The workspace is bound read-write. Binding $HOME itself, an ancestor
       # of it, or / would hand the container every credential directory the
       # wrapper deliberately leaves unmounted (~/.ssh, ~/.config/gh, ~/.aws, …),
@@ -103,6 +101,7 @@ class Contribute < Formula
       }
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
+      export HIVE_CONTRIBUTOR_CONFIG_DIR="$container_config"
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
         export GH_TOKEN="$GITHUB_TOKEN"
       fi
@@ -138,9 +137,10 @@ class Contribute < Formula
       }
 
       collect_env_names() {
-        env | while IFS='=' read -r name _; do
+        local name
+        while IFS= read -r name; do
           env_name_allowed "$name" && printf '%s\n' "$name"
-        done | sort -u
+        done < <(compgen -e) | sort -u
       }
 
       add_existing_bind() {
@@ -198,12 +198,17 @@ class Contribute < Formula
         exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
       }
 
+      gvisor_engine() {
+        if command -v docker >/dev/null 2>&1; then echo docker; return 0; fi
+        if command -v podman >/dev/null 2>&1; then echo podman; return 0; fi
+        return 1
+      }
+
       docker_like_run() {
         local engine="$1"
-        local -a args=(run --rm -it --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
-        if [[ "$engine" == "docker" && "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
-          args+=(--runtime=runsc)
-        elif [[ "$engine" == "podman" && "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
+        local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
+        [[ -t 0 && -t 1 ]] && args+=(-t)
+        if [[ "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
           args+=(--runtime=runsc)
         fi
         while IFS= read -r name; do args+=(-e "$name"); done < <(collect_env_names)
@@ -253,16 +258,35 @@ class Contribute < Formula
         exit "$status"
       }
 
+      case "$requested_runtime" in
+        auto|apptainer|docker|podman|gvisor|lima) ;;
+        *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
+      esac
+
       if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
         if [[ "$host_os" == linux* && "$requested_runtime" == auto ]]; then echo apptainer; exit 0; fi
-        for runtime in "$requested_runtime" docker podman lima; do
-          [[ "$runtime" == auto ]] && continue
-          if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
-          if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
-        done
+        if [[ "$requested_runtime" == gvisor ]]; then
+          gvisor_engine && exit 0
+          echo none
+          exit 1
+        fi
+        if [[ "$requested_runtime" == auto ]]; then
+          for runtime in docker podman lima; do
+            if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
+            if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
+          done
+        else
+          if [[ "$requested_runtime" == lima ]]; then
+            if command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
+          else
+            if command -v "$requested_runtime" >/dev/null 2>&1; then echo "$requested_runtime"; exit 0; fi
+          fi
+        fi
         echo none
         exit 1
       fi
+
+      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
 
       if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
         echo "hive-contribute: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2
@@ -278,10 +302,15 @@ class Contribute < Formula
           lima_run "$@"
           ;;
         apptainer) apptainer_run "$@" ;;
-        docker|gvisor) docker_like_run docker "$@" ;;
+        docker) docker_like_run docker "$@" ;;
+        gvisor)
+          engine=$(gvisor_engine) || { echo "HIVE_CONTRIBUTE_RUNTIME=gvisor needs docker or podman with runsc configured" >&2; exit 127; }
+          docker_like_run "$engine" "$@"
+          ;;
         podman) docker_like_run podman "$@" ;;
         lima) lima_run "$@" ;;
-        *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
+        # Unreachable: the accepted set is validated once above, before --wrapper-print-runtime.
+        *) echo "hive-contribute: internal error: unhandled runtime $requested_runtime" >&2; exit 70 ;;
       esac
     SH
   end
@@ -289,7 +318,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:d08dd5046158935b461e331496ab1ed0a84a253ae3a4c53ff79573f3e1089948
+        ghcr.io/hivecommons/hive-contributor@sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -315,7 +344,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute d08dd5046158",
+      "hive-contribute 20261023.124028.0fe184775141",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
   end
