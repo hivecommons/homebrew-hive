@@ -55,8 +55,6 @@
       container_config="/home/dev/.config/hive"
       case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
 
-      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
-
       # The workspace is bound read-write. Binding $HOME itself, an ancestor
       # of it, or / would hand the container every credential directory the
       # wrapper deliberately leaves unmounted (~/.ssh, ~/.config/gh, ~/.aws, …),
@@ -257,6 +255,8 @@
         echo none
         exit 1
       fi
+
+      mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
 
       if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
         echo "@BINARY@: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2

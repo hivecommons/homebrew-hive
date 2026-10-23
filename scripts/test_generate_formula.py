@@ -375,6 +375,12 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertEqual(proc.stdout.strip(), "none")
 
+    def test_print_runtime_does_not_create_workspace_config_or_state_dirs(self):
+        proc = self.run_wrapper("--wrapper-print-runtime")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse((self.home / ".config" / "hive").exists())
+        self.assertFalse((self.home / ".local" / "state" / "hive" / "contribute").exists())
+
     def test_missing_apptainer_fails_with_127(self):
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})
         self.assertEqual(proc.returncode, 127)
