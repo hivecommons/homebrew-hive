@@ -27,9 +27,11 @@ jobs:
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
           echo "/home/linuxbrew/.linuxbrew/sbin" >> "$GITHUB_PATH"
 
-      - name: Validate generated formulae
+      - name: Validate all formulae (generated and hand-maintained)
         run: |
           set -euo pipefail
+          # Style and audit cover every formula; macOS-only formulae such as
+          # hotshot are built and tested on macOS by hotshot.yml instead.
           if ls Formula/*.rb >/dev/null 2>&1; then
             brew tap hivecommons/hive "$PWD"
             ruby -c Formula/*.rb
@@ -39,7 +41,7 @@ jobs:
               brew audit --strict --new "hivecommons/hive/${formula_name}"
             done
           else
-            echo "No generated formulae yet."
+            echo "No formulae yet."
           fi
 
       - name: Install and test contribute formula when present

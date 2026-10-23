@@ -7,7 +7,16 @@ brew install hivecommons/hive/contribute
 hive-contribute
 ```
 
-It exists so that contributing to a Hive does not require cloning a repository
+It also carries hand-maintained formulae for other hivecommons CLIs; today
+that is [hotshot](https://github.com/hivecommons/hotshot), the macOS
+screenshot-to-path menu-bar helper for AI coding terminals:
+
+```sh
+brew install hivecommons/hive/hotshot
+hotshot &
+```
+
+The contribute formula exists so that contributing to a Hive does not require cloning a repository
 first. The formula wraps the published `ghcr.io/hivecommons/hive-contributor`
 container image, converted to a self-contained [Apptainer](https://apptainer.org)
 SIF for Linux, with documented Docker/Podman/Lima fallbacks for platforms where
@@ -41,9 +50,30 @@ Upstream's only contract to this tap is **a stable image reference and
 tag/digest discipline**. That precondition is satisfied, so the tap workflow can
 pin `stable` by digest and convert that exact image.
 
-The practical consequence: **`Formula/` is generated output.** If a formula is
-wrong, fix `scripts/generate-formula.py` or `.github/workflows/convert.yml`, not
-the generated artifact.
+The practical consequence: **`Formula/contribute*.rb` is generated output.** If
+one of those formulae is wrong, fix `scripts/generate-formula.py` or
+`.github/workflows/convert.yml`, not the generated artifact. Other files in
+`Formula/` are hand-maintained; see [Hand-maintained formulae](#hand-maintained-formulae).
+
+## Hand-maintained formulae
+
+Homebrew serves a tap's formulae from a single directory (`Formula/` once it
+exists), so hand-maintained formulae share `Formula/` with the generated ones
+and ownership is tracked per file in [`Formula/README.md`](Formula/README.md):
+
+| Formula | Installs | Source | Owner |
+|---|---|---|---|
+| `contribute` | `hive-contribute` | generated from the `hive-contributor` image | `convert.yml` |
+| `hotshot` | `hotshot` | `swift build -c release` of the tagged [hivecommons/hotshot](https://github.com/hivecommons/hotshot) tarball (macOS 13+, Xcode 15+) | pull requests |
+
+The generator writes and stages only `Formula/<formula>.rb` for the channel it
+converts, and `convert.yml` fails if a run modifies any other file under
+`Formula/`. To bump `hotshot`, follow the checklist in
+[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb);
+`.github/workflows/hotshot.yml` builds it from source and runs `brew test` on a
+macOS runner for PRs that touch it. The formula ships the CLI binary only; the
+double-clickable `Hotshot.app` bundle is still produced from a source checkout
+with upstream's `scripts/bundle.sh`.
 
 ## Platform reality
 
@@ -188,6 +218,10 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
   `scripts/generate-formula.py`, `scripts/contribute-wrapper.sh.in`, or
   `.github/workflows/convert.yml` instead, and run the generator tests (see
   [Testing the generator](#testing-the-generator)) before opening a PR.
+- `Formula/hotshot.rb` (and any formula listed as hand-maintained in
+  `Formula/README.md`) is edited directly by PR; run `brew style`,
+  `brew audit --strict --new`, `brew install --build-from-source` and
+  `brew test` on macOS first.
 - Sign off every commit (`git commit -s`) to satisfy the Developer Certificate
   of Origin check.
 - Generated formula PRs (`generated/contribute-*` branches) are opened by the

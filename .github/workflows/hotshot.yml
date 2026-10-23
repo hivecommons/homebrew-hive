@@ -1,0 +1,48 @@
+name: hotshot formula (macOS)
+
+# Formula/hotshot.rb is hand-maintained and macOS-only, so the Linux Tap CI
+# job can only style/audit it. This job builds it from source and runs the
+# formula test on a macOS runner whenever the formula (or this job) changes.
+on:
+  pull_request:
+    paths:
+      - Formula/hotshot.rb
+      - .github/workflows/hotshot.yml
+  push:
+    branches: [main]
+    paths:
+      - Formula/hotshot.rb
+      - .github/workflows/hotshot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hotshot:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Tap this checkout
+        run: |
+          set -euo pipefail
+          # `brew tap <path>` clones committed HEAD, so overlay the PR's working
+          # copy of the formula into the tap before building it.
+          brew tap hivecommons/hive "$PWD"
+          cp Formula/hotshot.rb "$(brew --repository hivecommons/hive)/Formula/hotshot.rb"
+
+      - name: Style and audit
+        run: |
+          set -euo pipefail
+          brew style Formula/hotshot.rb
+          brew audit --strict --new hivecommons/hive/hotshot
+
+      - name: Build from source and test
+        run: |
+          set -euo pipefail
+          brew install --build-from-source hivecommons/hive/hotshot
+          test -x "$(brew --prefix)/bin/hotshot"
+          brew test hivecommons/hive/hotshot

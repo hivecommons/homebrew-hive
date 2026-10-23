@@ -238,11 +238,27 @@ jobs:
             --arm64-sha256 "$arm_sha" \
             --output "Formula/${FORMULA}.rb"
 
-      - name: Smoke generated wrapper syntax
+      - name: Guard hand-maintained formulae
+        env:
+          FORMULA: ${{ needs.resolve.outputs.formula }}
         run: |
           set -euo pipefail
-          ruby -c Formula/*.rb
-          grep -R -- "--wrapper-version" Formula/*.rb
+          # The generator owns exactly Formula/<formula>.rb. Anything else under
+          # Formula/ (hotshot.rb, README.md, ...) is hand-maintained; fail loudly
+          # if this run touched it rather than committing it below.
+          unexpected=$(git status --porcelain --untracked-files=all -- Formula | awk '{print $2}' | grep -vx "Formula/${FORMULA}.rb" || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::conversion modified hand-maintained files under Formula/: ${unexpected//$'\n'/, }"
+            exit 1
+          fi
+
+      - name: Smoke generated wrapper syntax
+        env:
+          FORMULA: ${{ needs.resolve.outputs.formula }}
+        run: |
+          set -euo pipefail
+          ruby -c "Formula/${FORMULA}.rb"
+          grep -- "--wrapper-version" "Formula/${FORMULA}.rb"
 
       - name: Validate generated formula like Tap CI
         env:
@@ -274,7 +290,7 @@ jobs:
           FORMULA: ${{ needs.resolve.outputs.formula }}
         run: |
           set -euo pipefail
-          if [ -z "$(git status --porcelain -- Formula)" ]; then
+          if [ -z "$(git status --porcelain -- "Formula/${FORMULA}.rb")" ]; then
             echo "Formula already up to date."
             exit 0
           fi
@@ -285,7 +301,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git add Formula
+          git add "Formula/${FORMULA}.rb"
           git commit -s -m "🌱 tap: generate ${CHANNEL} contribute formula" \
             -m "Image digest: ${DIGEST}" \
             -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
