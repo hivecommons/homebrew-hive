@@ -224,8 +224,9 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
   `brew test` on macOS first.
 - Sign off every commit (`git commit -s`) to satisfy the Developer Certificate
   of Origin check.
-- Generated formula PRs (`generated/contribute-*` branches) are opened by the
-  conversion workflow; review them, do not push to them.
+- Generated formula PRs (the long-lived `generated/contribute` and
+  `generated/contribute-candidate` branches, force-pushed by each run) are
+  opened by the conversion workflow; review them, do not push to them.
 
 ## Rollback
 

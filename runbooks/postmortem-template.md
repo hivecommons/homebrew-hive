@@ -26,7 +26,7 @@ was affected, and how long the bad digest was live on `main`.
 | When (UTC) | Event |
 |---|---|
 | | Upstream image promoted to the channel |
-| | `convert.yml` generated the formula PR (`generated/contribute-<digest12>`) |
+| | `convert.yml` generated the formula PR (the long-lived `generated/contribute` branch, title `contribute-<digest12>`) |
 | | Formula PR merged to `main` |
 | | First report or first red `Tap CI` run |
 | | Cause identified |
