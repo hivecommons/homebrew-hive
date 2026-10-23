@@ -1,4 +1,4 @@
-# Runbook: roll back the `contribute` formula
+# Runbook: roll back a formula
 
 Use this when a merged `Formula/contribute.rb` (or `contribute-candidate.rb`)
 installs a broken, wrong, or unwanted `hive-contributor` image.
@@ -98,3 +98,39 @@ The printed `image=` digest must match the intended known-good digest.
   issue on this repository, using [postmortem-template.md](postmortem-template.md).
 - If the cause was missing validation, extend `.github/workflows/ci.yml` or
   `scripts/generate-formula.py` so it is caught before merge.
+
+## Rolling back `hotshot` (hand-maintained)
+
+`Formula/hotshot.rb` is not generated, so Options A and B above do not apply:
+there is no channel to re-point and `convert.yml` never touches it. A bad
+`hotshot` is a bad `url`/`sha256` bump (or a build break) merged to `main`.
+
+Impact: new installs and upgrades build the bad tag from source. Installed
+copies keep working until upgraded.
+
+1. Detect: the `hotshot` workflow (macOS build and `brew test`) or `Tap CI`
+   fails on `main`, or users report the installed binary misbehaves.
+2. Revert the bump commit and open a PR against `main`:
+
+   ```sh
+   git switch -c revert-hotshot-<bad-tag> origin/main
+   git revert --no-edit <bad-merge-commit>
+   git commit --amend -s --no-edit
+   git push origin HEAD
+   ```
+
+3. Wait for `Tap CI` and the `hotshot` workflow to pass, then merge (needs a
+   maintainer). The restored `url` points at an earlier upstream tag, which
+   stays downloadable as long as upstream does not delete it; confirm with
+   `curl -sIL <restored-url>` returning 200.
+4. Users who already installed the bad version have a higher version than the
+   restored formula, so `brew upgrade` will not downgrade them:
+
+   ```sh
+   brew update
+   brew reinstall hivecommons/hive/hotshot
+   ```
+
+If the bad tag is upstream's fault, fix or re-tag upstream and bump forward
+using the checklist in [`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb).
+Record the incident with [postmortem-template.md](postmortem-template.md).
