@@ -284,5 +284,6 @@
           ;;
         podman) docker_like_run podman "$@" ;;
         lima) lima_run "$@" ;;
-        *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
+        # Unreachable: the accepted set is validated once above, before --wrapper-print-runtime.
+        *) echo "@BINARY@: internal error: unhandled runtime $requested_runtime" >&2; exit 70 ;;
       esac
