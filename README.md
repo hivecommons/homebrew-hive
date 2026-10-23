@@ -140,7 +140,8 @@ These diagnostic flags do not launch the relay; pass each as the first argument:
   `none` with exit status 1 when none is found. This is a selection diagnostic,
   not a runtime health check: Linux's automatic selection reports `apptainer`
   without checking that it is installed. It exits before creating any of the
-  directories above.
+  directories above. An unrecognised `HIVE_CONTRIBUTE_RUNTIME` value is
+  rejected with exit status 2, the same as a real run.
 - `hive-contribute --help` (or `-h`) prints wrapper usage.
 
 ## Automation

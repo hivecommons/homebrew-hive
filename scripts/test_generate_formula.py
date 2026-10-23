@@ -346,6 +346,13 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertIn("unknown HIVE_CONTRIBUTE_RUNTIME=firecracker", proc.stderr)
 
+    def test_print_runtime_rejects_unknown_runtime_even_when_binary_installed(self):
+        self.add_stub("nerdctl")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "nerdctl"})
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertIn("unknown HIVE_CONTRIBUTE_RUNTIME=nerdctl", proc.stderr)
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux auto-selects apptainer")
     def test_print_runtime_prefers_apptainer_on_linux(self):
         proc = self.run_wrapper("--wrapper-print-runtime")
@@ -1115,12 +1122,17 @@ class WrapperTests(unittest.TestCase):
     # fallthrough (an explicit request silently landing on another engine) is
     # caught wherever it appears instead of only at the sites already tested.
 
-    ENGINES = ("apptainer", "docker", "podman", "limactl")
-    RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima")
+    ENGINES = ("apptainer", "docker", "podman", "limactl", "nerdctl")
+    # "nerdctl" is not a supported runtime: it must be rejected even when a
+    # binary of that name is installed.
+    RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima", "nerdctl")
+    SUPPORTED_RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima")
 
-    @staticmethod
-    def expected_engine(host, requested, installed):
+    @classmethod
+    def expected_engine(cls, host, requested, installed):
         """Engine the wrapper must hand off to, or None for 'nothing usable'."""
+        if requested not in cls.SUPPORTED_RUNTIMES:
+            return "rejected"
         if requested == "auto":
             if host == "linux":
                 return "apptainer" if "apptainer" in installed else None
@@ -1166,7 +1178,10 @@ class WrapperTests(unittest.TestCase):
                 want = self.expected_engine(host, requested, installed)
 
                 proc = self.run_wrapper("--wrapper-print-runtime", env=env)
-                if host == "linux" and requested == "auto":
+                if want == "rejected":
+                    self.assertEqual((proc.returncode, proc.stdout.strip()), (2, ""), proc.stderr)
+                    self.assertIn(f"unknown HIVE_CONTRIBUTE_RUNTIME={requested}", proc.stderr)
+                elif host == "linux" and requested == "auto":
                     # Linux auto never probes: apptainer is the only choice.
                     self.assertEqual((proc.returncode, proc.stdout.strip()), (0, "apptainer"))
                 elif want is None:
@@ -1176,7 +1191,11 @@ class WrapperTests(unittest.TestCase):
                 self.assertFalse(self.stub_out.exists(), "print-runtime must not exec an engine")
 
                 proc = self.run_wrapper("relay-arg", env=env)
-                if want is None:
+                if want == "rejected":
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertIn(f"unknown HIVE_CONTRIBUTE_RUNTIME={requested}", proc.stderr)
+                    self.assertFalse(self.stub_out.exists(), "exec'd an engine for an unknown runtime")
+                elif want is None:
                     self.assertEqual(proc.returncode, 127, proc.stderr)
                     self.assertFalse(self.stub_out.exists(), f"exec'd an engine despite none usable: {proc.stderr}")
                 else:

@@ -233,6 +233,11 @@
         exit "$status"
       }
 
+      case "$requested_runtime" in
+        auto|apptainer|docker|podman|gvisor|lima) ;;
+        *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
+      esac
+
       if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
         if [[ "$host_os" == linux* && "$requested_runtime" == auto ]]; then echo apptainer; exit 0; fi
         if [[ "$requested_runtime" == gvisor ]]; then
