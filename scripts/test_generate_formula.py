@@ -1102,6 +1102,86 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "lima")
 
+    # Runtime dispatch contract. `--wrapper-print-runtime` promises to report
+    # the engine the run path would exec (#126, #130). Rather than one test per
+    # arm, enumerate every host × HIVE_CONTRIBUTE_RUNTIME × installed-engine
+    # subset and check both paths against a single reference model, so any new
+    # fallthrough (an explicit request silently landing on another engine) is
+    # caught wherever it appears instead of only at the sites already tested.
+
+    ENGINES = ("apptainer", "docker", "podman", "limactl")
+    RUNTIMES = ("auto", "apptainer", "docker", "podman", "gvisor", "lima")
+
+    @staticmethod
+    def expected_engine(host, requested, installed):
+        """Engine the wrapper must hand off to, or None for 'nothing usable'."""
+        if requested == "auto":
+            if host == "linux":
+                return "apptainer" if "apptainer" in installed else None
+            for engine in ("docker", "podman"):
+                if engine in installed:
+                    return engine
+            return "lima" if "limactl" in installed else None
+        if requested == "gvisor":
+            for engine in ("docker", "podman"):
+                if engine in installed:
+                    return engine
+            return None
+        if requested == "lima":
+            return "lima" if "limactl" in installed else None
+        return requested if requested in installed else None
+
+    def add_name_stub(self, name: str) -> None:
+        path = self.bindir / name
+        path.write_text('#!/usr/bin/env bash\nprintf \'%s\\n\' "${0##*/}" > "$STUB_OUT"\n')
+        path.chmod(0o755)
+
+    def install_only(self, installed) -> None:
+        for name in self.ENGINES:
+            (self.bindir / name).unlink(missing_ok=True)
+        for name in installed:
+            self.add_name_stub(name)
+
+    def dispatch_cases(self):
+        for host in ("linux", "darwin"):
+            for requested in self.RUNTIMES:
+                for bits in range(1 << len(self.ENGINES)):
+                    installed = frozenset(e for i, e in enumerate(self.ENGINES) if bits >> i & 1)
+                    yield host, requested, installed
+
+    def test_print_runtime_matches_run_path_for_every_host_runtime_and_install_set(self):
+        for host, requested, installed in self.dispatch_cases():
+            with self.subTest(host=host, runtime=requested, installed=sorted(installed)):
+                if host == "darwin":
+                    self.pretend_macos()
+                self.install_only(installed)
+                self.stub_out.unlink(missing_ok=True)
+                env = {"HIVE_CONTRIBUTE_RUNTIME": requested}
+                want = self.expected_engine(host, requested, installed)
+
+                proc = self.run_wrapper("--wrapper-print-runtime", env=env)
+                if host == "linux" and requested == "auto":
+                    # Linux auto never probes: apptainer is the only choice.
+                    self.assertEqual((proc.returncode, proc.stdout.strip()), (0, "apptainer"))
+                elif want is None:
+                    self.assertEqual((proc.returncode, proc.stdout.strip()), (1, "none"), proc.stderr)
+                else:
+                    self.assertEqual((proc.returncode, proc.stdout.strip()), (0, want), proc.stderr)
+                self.assertFalse(self.stub_out.exists(), "print-runtime must not exec an engine")
+
+                proc = self.run_wrapper("relay-arg", env=env)
+                if want is None:
+                    self.assertEqual(proc.returncode, 127, proc.stderr)
+                    self.assertFalse(self.stub_out.exists(), f"exec'd an engine despite none usable: {proc.stderr}")
+                else:
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    ran = self.stub_out.read_text().strip()
+                    self.assertEqual(ran, "limactl" if want == "lima" else want)
+            if host == "darwin":
+                # pretend_macos replaced the uname symlink; restore for the next host.
+                (self.bindir / "uname").unlink()
+                os.symlink(shutil.which("uname"), self.bindir / "uname")
+
 
 if __name__ == "__main__":
     unittest.main()
