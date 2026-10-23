@@ -165,8 +165,10 @@ they rebuild and republish the current stable release. It:
    --build-from-source`, `brew test`) against the just-published release;
 8. opens a PR for the generated formula.
 
-The workflow pins third-party GitHub Actions by full commit SHA and uses only
-`contents: write` / `pull-requests: write` permissions.
+The workflow pins third-party GitHub Actions by full commit SHA and grants
+write scopes per job: `contents: write` / `pull-requests: write` to the publish
+job, and `issues: write` to the failure-notification job that opens, updates
+and closes the "Convert pipeline failing" tracking issue.
 
 ## Testing the generator
 
