@@ -242,11 +242,18 @@
           echo none
           exit 1
         fi
-        for runtime in "$requested_runtime" docker podman lima; do
-          [[ "$runtime" == auto ]] && continue
-          if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
-          if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
-        done
+        if [[ "$requested_runtime" == auto ]]; then
+          for runtime in docker podman lima; do
+            if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
+            if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
+          done
+        else
+          if [[ "$requested_runtime" == lima ]]; then
+            if command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
+          else
+            if command -v "$requested_runtime" >/dev/null 2>&1; then echo "$requested_runtime"; exit 0; fi
+          fi
+        fi
         echo none
         exit 1
       fi

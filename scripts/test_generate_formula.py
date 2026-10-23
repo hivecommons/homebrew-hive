@@ -363,6 +363,18 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "podman")
 
+    def test_print_runtime_explicit_docker_does_not_fall_through_to_podman(self):
+        self.add_stub("podman")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout.strip(), "none")
+
+    def test_print_runtime_explicit_apptainer_does_not_fall_through_to_docker(self):
+        self.add_stub("docker")
+        proc = self.run_wrapper("--wrapper-print-runtime", env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout.strip(), "none")
+
     def test_missing_apptainer_fails_with_127(self):
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})
         self.assertEqual(proc.returncode, 127)
