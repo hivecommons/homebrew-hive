@@ -48,3 +48,37 @@ jobs:
           brew install --build-from-source hivecommons/hive/hotshot
           test -x "$(brew --prefix)/bin/hotshot"
           brew test hivecommons/hive/hotshot
+
+  # Scheduled runs are the drift signal nobody is watching live, so a red one
+  # must reach a human: mirror convert.yml's notify-failure job and keep one
+  # tracking issue open until a later scheduled run goes green.
+  notify-failure:
+    needs: [hotshot]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue on failure, close it on success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ needs.hotshot.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="hotshot formula failing"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ "$RESULT" = failure ]; then
+            body="The \`${GITHUB_WORKFLOW}\` run failed (hotshot: ${RESULT}): ${RUN_URL}"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --title "$title" \
+                --body "$body"$'\n\n'"Formula/hotshot.rb no longer builds from source on the current macOS runner; see the hotshot section of runbooks/rollback.md. This issue closes automatically when a later scheduled run succeeds."
+            fi
+          elif [ "$RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
+          fi
