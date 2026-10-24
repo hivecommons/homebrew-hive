@@ -77,10 +77,14 @@ merge the PR as usual (needs a maintainer).
 - The newest `Convert Hive contributor image` run is green.
 - The `generated/contribute` PR references the current upstream `stable`
   digest, and the "Validate generated formula like Tap CI" step of the Convert
-  run that pushed it is green.   Tap CI runs on the generated PR because it is pushed with the hivecommons-hive
-  App token; if the publish job fails at "Create GitHub App token", the
+  run that pushed it is green.
+- `Tap CI` runs on the generated PR because the branch is pushed and the PR is
+  opened with the hivecommons-hive App token (the PR author is the App; the
+  commit itself is still authored and signed off by `github-actions[bot]`). If
+  it stays `action_required`, click "Approve and run" on the PR's checks as a
+  fallback. If the publish job fails at "Create GitHub App token", the
   `HIVE_APP_ID` / `HIVE_APP_PRIVATE_KEY` secrets are missing or the App is not
-  installed.
+  installed on the repo.
 - After merge: `brew update && brew upgrade hivecommons/hive/contribute &&
   hive-contribute --wrapper-version` prints the expected `image=` digest.
 
