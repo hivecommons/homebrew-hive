@@ -81,15 +81,26 @@ with upstream's `scripts/bundle.sh`.
 
 - **Linux:** Apptainer runs natively on Linux. Homebrew-on-Linux has an
   `apptainer` formula, and `Formula/contribute.rb` depends on it. The wrapper
-  runs the generated SIF with `apptainer run --containall --writable-tmpfs`,
-  binds a workspace plus Hive/CLI credential directories, and forwards Hive,
-  GitHub, and backend provider environment variables.
+  starts the generated SIF as a named instance in interactive mode (the
+  default), runs the relay inside it, and attaches your terminal to its
+  `contributor` tmux session. Detaching or exiting stops the instance.
+  `HIVE_CONTAINER_NAME` overrides the default instance name `hive-contributor`.
+  Set `CONTRIBUTOR_MODE=headless` for non-TTY use; this keeps the foreground
+  `apptainer run` path. Both modes use `--containall --writable-tmpfs`, bind a
+  workspace plus Hive/CLI credential directories, and forward Hive, GitHub,
+  and backend provider environment variables. Older relay banners may still
+  print a Docker-style attach hint; while the wrapper is running, the correct
+  command is `apptainer exec instance://hive-contributor tmux attach -t contributor`
+  (substitute your instance name if overridden).
 - **macOS:** Apptainer is not native; it needs a Linux VM. Lima has an
   Apptainer template (`limactl create --name=apptainer --mount-writable
   template://apptainer`).
   The wrapper defaults to Docker or Podman if available and supports
   `HIVE_CONTRIBUTE_RUNTIME=lima` for operators who have created a Lima
-  Apptainer VM. Caveat: the Lima path runs the pinned OCI image reference inside
+  Apptainer VM. Interactive mode attaches via a named instance inside the VM
+  and stops it on exit, just like Linux; use `CONTRIBUTOR_MODE=headless` for
+  non-TTY use. Run manual attach commands inside `limactl shell apptainer`.
+  Caveat: the Lima path runs the pinned OCI image reference inside
   the VM rather than the local SIF asset unless the user shares the Homebrew
   Cellar into Lima. It forwards the same environment (including the HTTPS git
   credential helper) and honours the same `HIVE_CONTRIBUTE_MOUNT_*` opt-ins as

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import pty
 import re
@@ -31,7 +32,7 @@ GENERATOR = SCRIPTS_DIR / "generate-formula.py"
 
 # Minimal host tools the wrapper needs; everything else is kept off PATH so
 # the tests never pick up a real container runtime.
-HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh", "mktemp", "rm", "cp")
+HOST_TOOLS = ("bash", "uname", "tr", "mkdir", "env", "sort", "cat", "sh", "mktemp", "rm", "cp", "sleep")
 
 
 def load_generator():
@@ -187,6 +188,17 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("run --rm -it", text)
         self.assertIn("run --rm -i --name", text)
 
+    def test_render_includes_interactive_instance_and_headless_paths(self):
+        for args in (make_args(), make_args(channel="candidate", formula="contribute-candidate",
+                                            binary="hive-contribute-candidate")):
+            with self.subTest(channel=args.channel):
+                text = gen.render(args)
+                self.assertIn('apptainer instance start', text)
+                self.assertIn('apptainer exec "instance://$name" tmux attach -t contributor', text)
+                self.assertIn('apptainer_args=(run --containall', text)
+                self.assertIn('Set CONTRIBUTOR_MODE=headless for non-TTY use', text)
+                self.assertIn('Interactive Apptainer (Linux or Lima) starts a named instance', text)
+
     def test_render_escapes_quotes_in_inputs(self):
         text = gen.render(make_args(version='1"; system("id'))
         self.assertIn('version "20261022.094500.1\\"; system(\\"id"', text)
@@ -286,9 +298,13 @@ class WrapperTests(unittest.TestCase):
             "HOME": str(self.home),
             "STUB_OUT": str(self.stub_out),
             "HIVE_WORKSPACE_DIR": str(self.tmp / "workspace"),
+            # Most tests exercise the single-command headless hand-off. The
+            # instance lifecycle tests below explicitly select interactive use.
+            "CONTRIBUTOR_MODE": "headless",
         }
         if env:
             full_env.update(env)
+            full_env = {name: value for name, value in full_env.items() if value is not None}
         cmd = ["bash", str(self.wrapper), *argv]
         if not tty:
             return subprocess.run(
@@ -440,6 +456,134 @@ class WrapperTests(unittest.TestCase):
         for created in ("workspace", "home/.config/hive", "home/.local/state/hive/contribute/home",
                         "home/.local/state/hive/contribute/metrics"):
             self.assertTrue((self.tmp / created).is_dir(), created)
+
+    def add_instance_stubs(self):
+        # Model an OCI SIF: starting an instance alone does not start the relay.
+        # Record every call so ordering, retries, and cleanup are observable.
+        script = "#!" + sys.executable + "\n" + textwrap.dedent('''\
+            import json, os, signal, sys, time
+            from pathlib import Path
+            args = sys.argv[1:]
+            base = Path(os.environ["STUB_OUT"])
+            with base.open("a") as out:
+                out.write(json.dumps({"argv": args, "env": dict(os.environ)}) + "\\n")
+            if args[:2] == ["instance", "start"]:
+                sys.exit(int(os.environ.get("STUB_START_EXIT", "0")))
+            if args[:2] == ["instance", "stop"]:
+                Path(str(base) + ".stopped").touch()
+            elif args[0] == "run":
+                if "STUB_RELAY_EXIT" in os.environ:
+                    sys.exit(int(os.environ["STUB_RELAY_EXIT"]))
+                Path(str(base) + ".running").touch()
+                while not Path(str(base) + ".stopped").exists():
+                    time.sleep(0.01)
+            elif args[0] == "exec":
+                if args[3] == "has-session":
+                    probe = Path(str(base) + ".probes")
+                    count = int(probe.read_text()) + 1 if probe.exists() else 1
+                    probe.write_text(str(count))
+                    ready = (count >= 2 and Path(str(base) + ".running").exists()
+                             and not os.environ.get("STUB_NEVER_READY"))
+                    sys.exit(0 if ready else 1)
+                if os.environ.get("STUB_ATTACH_SIGNAL"):
+                    os.kill(os.getppid(), signal.SIGTERM)
+                    time.sleep(10)
+                sys.exit(int(os.environ.get("STUB_ATTACH_EXIT", "0")))
+        ''')
+        (self.bindir / "apptainer").write_text(script)
+        (self.bindir / "apptainer").chmod(0o755)
+        # Execute the guest shell, unlike the headless argument-snapshot stub.
+        (self.bindir / "limactl").write_text(textwrap.dedent('''\
+            #!/usr/bin/env bash
+            [[ "$1" == shell ]] || exit 0
+            shift 2
+            exec "$@"
+        '''))
+        (self.bindir / "limactl").chmod(0o755)
+        # Keep bounded-readiness tests fast without a real container startup.
+        (self.bindir / "sleep").unlink()
+        (self.bindir / "sleep").write_text(
+            "#!" + sys.executable + "\nimport time\ntime.sleep(0.01)\n")
+        (self.bindir / "sleep").chmod(0o755)
+
+    def instance_records(self):
+        return [json.loads(line) for line in self.stub_out.read_text().splitlines()]
+
+    def reset_instance_records(self):
+        for path in self.tmp.glob("stub.out*"):
+            path.unlink()
+
+    def test_interactive_apptainer_and_lima_start_run_attach_stop(self):
+        self.add_instance_stubs()
+        for runtime in ("apptainer", "lima"):
+            for mode, name in ((None, "hive-contributor"), ("interactive", "relay-two")):
+                with self.subTest(runtime=runtime, mode=mode):
+                    self.reset_instance_records()
+                    proc = self.run_wrapper("relay", "arg with spaces", tty=True, env={
+                        "HIVE_CONTRIBUTE_RUNTIME": runtime, "CONTRIBUTOR_MODE": mode,
+                        "HIVE_CONTAINER_NAME": "" if not mode else name,
+                        "GH_TOKEN": "test-token", "HIVE_REGISTRATION_TOKEN": "registration",
+                    })
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    records = self.instance_records()
+                    calls = [record["argv"] for record in records]
+                    start = calls[0]
+                    self.assertEqual(start[:5], ["instance", "start", "--containall", "--writable-tmpfs", "--pwd"])
+                    image = (str(self.libexec / "hive-contributor-stable.sif") if runtime == "apptainer"
+                             else f"docker://{self.args.image_ref}")
+                    self.assertEqual(start[-2:], [image, name])
+                    self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", start)
+                    self.assertEqual(records[0]["env"]["APPTAINERENV_HIVE_CONTAINER_NAME"], name)
+                    self.assertEqual(records[0]["env"]["APPTAINERENV_HIVE_CONTAINER_RUNTIME"], "apptainer")
+                    self.assertEqual(records[0]["env"]["APPTAINERENV_GH_TOKEN"], "test-token")
+                    self.assertIn(["run", f"instance://{name}", "relay", "arg with spaces"], calls)
+                    attach = ["exec", f"instance://{name}", "tmux", "attach", "-t", "contributor"]
+                    self.assertEqual(calls[-2:], [attach, ["instance", "stop", name]])
+                    self.assertGreaterEqual(sum("has-session" in c for c in calls), 2)
+                    self.assertNotIn("test-token", json.dumps(calls))
+                    self.assertEqual(self.lima_env_files(), [])
+
+    def test_interactive_requires_a_terminal(self):
+        self.add_instance_stubs()
+        for runtime in ("apptainer", "lima"):
+            with self.subTest(runtime=runtime):
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": runtime, "CONTRIBUTOR_MODE": ""})
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("CONTRIBUTOR_MODE=headless", proc.stderr)
+                self.assertFalse(self.stub_out.exists())
+                self.assertEqual(self.lima_env_files(), [])
+
+    def test_interactive_start_failure_does_not_stop_an_existing_instance(self):
+        self.add_instance_stubs()
+        for runtime in ("apptainer", "lima"):
+            with self.subTest(runtime=runtime):
+                self.reset_instance_records()
+                proc = self.run_wrapper(tty=True, env={
+                    "HIVE_CONTRIBUTE_RUNTIME": runtime, "CONTRIBUTOR_MODE": "interactive",
+                    "STUB_START_EXIT": "9",
+                })
+                self.assertEqual(proc.returncode, 9, proc.stderr)
+                self.assertEqual(len(self.instance_records()), 1)
+                self.assertEqual(self.lima_env_files(), [])
+
+    def test_interactive_failures_stop_instance_and_preserve_status(self):
+        self.add_instance_stubs()
+        for runtime in ("apptainer", "lima"):
+            for failure, status in (({"STUB_ATTACH_EXIT": "7"}, 7),
+                                    ({"STUB_RELAY_EXIT": "8"}, 8),
+                                    ({"STUB_NEVER_READY": "1"}, 1),
+                                    ({"STUB_ATTACH_SIGNAL": "1"}, 143)):
+                with self.subTest(runtime=runtime, failure=failure):
+                    self.reset_instance_records()
+                    proc = self.run_wrapper(tty=True, env={
+                        "HIVE_CONTRIBUTE_RUNTIME": runtime, "CONTRIBUTOR_MODE": "interactive", **failure,
+                    })
+                    self.assertEqual(proc.returncode, status, proc.stderr)
+                    calls = [record["argv"] for record in self.instance_records()]
+                    self.assertEqual(calls[-1], ["instance", "stop", "hive-contributor"])
+                    if "STUB_NEVER_READY" in failure or "STUB_RELAY_EXIT" in failure:
+                        self.assertFalse(any("attach" in call for call in calls))
+                    self.assertEqual(self.lima_env_files(), [])
 
     def test_home_workspace_is_refused_by_default(self):
         self.add_stub("apptainer")
@@ -698,6 +842,7 @@ class WrapperTests(unittest.TestCase):
                 self.add_stub(engine)
                 env = {"HIVE_CONTRIBUTE_RUNTIME": engine}
                 env.update({name: f"value-of-{name}" for name in probes})
+                env["CONTRIBUTOR_MODE"] = "headless"
                 env.update({name: "must-not-leak" for name in self.NEVER_FORWARDED})
                 proc = self.run_wrapper("relay", env=env)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -708,7 +853,7 @@ class WrapperTests(unittest.TestCase):
                 else:
                     value_of = lambda n: self.forwarded(argv, stub_env, n)  # noqa: E731
                 for name, pattern in probes.items():
-                    self.assertEqual(value_of(name), f"value-of-{name}", f"{pattern} not forwarded via {name}")
+                    self.assertEqual(value_of(name), env[name], f"{pattern} not forwarded via {name}")
                 for name in self.NEVER_FORWARDED:
                     self.assertFalse(value_of(name), f"{name} must not be forwarded")
                     self.assertNotIn(f"APPTAINERENV_{name}", stub_env)
