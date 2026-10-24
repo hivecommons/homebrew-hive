@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261023.124028.0fe184775141"
+  version "20261024.183837.349fec1e8311"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-0fe184775141/hive-contributor-arm64.sif"
-    sha256 "62f8253e6a67430786e7b8825bf8124087a48940c7eef9797151caacdd023e67"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-349fec1e8311/hive-contributor-arm64.sif"
+    sha256 "f39448e8d2d3615d120734e2cfb9c0e6f5fb7ad4243d15c825c0cd862eacf04c"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-0fe184775141/hive-contributor-amd64.sif"
-    sha256 "394de7c9d2d560964eea4bc35680d63cf7d496ff43c78e9c989ab9a5a8da015f"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-349fec1e8311/hive-contributor-amd64.sif"
+    sha256 "dca2d7a04cc4621116ebe9e753d2a68465c70272d6a3a00bd72f0dd8b214b5f2"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261023.124028.0fe184775141"
+      WRAPPER_VERSION="20261024.183837.349fec1e8311"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb"
-      IMAGE_DIGEST="sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:349fec1e8311e6211c42ef59991a0134eae33c5034e6235c89a0f8a580eb2072"
+      IMAGE_DIGEST="sha256:349fec1e8311e6211c42ef59991a0134eae33c5034e6235c89a0f8a580eb2072"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
 
       usage() {
@@ -42,7 +42,9 @@ class Contribute < Formula
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
         macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
         The Lima path forwards the same environment and mounts as native apptainer;
-        the host home must be shared into the VM at the same path AND writable
+        interactive Apptainer starts an instance and attaches to its tmux pane.
+        Set CONTRIBUTOR_MODE=headless for non-TTY use.
+        The host home must be shared into the VM at the same path AND writable
         (create the VM with --mount-writable; Lima's default home share is read-only).
 
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
@@ -160,6 +162,7 @@ class Contribute < Formula
           export "APPTAINERENV_${name}=${!name}"
         done < <(collect_env_names)
         export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
+        export APPTAINERENV_HIVE_CONTAINER_NAME="${HIVE_CONTAINER_NAME:-hive-contributor}"
         while IFS='=' read -r name value; do
           export "APPTAINERENV_${name}=${value}"
         done < <(git_https_env)
@@ -191,11 +194,69 @@ class Contribute < Formula
         )
       }
 
+      # OCI-derived SIFs have a runscript, not a service startscript. Start an
+      # idle instance, then run the relay inside it so exec can reach its tmux.
+      # The shell owns the instance and traps; Lima runs this same function in
+      # the guest. Keep a supervising shell alive to stop the instance on exit.
+      apptainer_interactive() {
+        local image="$1" name="$APPTAINERENV_HIVE_CONTAINER_NAME"
+        local relay_pid="" attach_pid="" attempt status
+        shift
+        if [[ ! -t 0 || ! -t 1 ]]; then
+          echo "hive-contribute: interactive Apptainer needs a terminal; set CONTRIBUTOR_MODE=headless for non-TTY use." >&2
+          exit 2
+        fi
+        apptainer instance start "${apptainer_args[@]:1}" "$image" "$name" || exit $?
+        # Only install cleanup after start succeeds: a name collision must
+        # never stop another invocation's instance.
+        cleanup_instance() {
+          [[ -z "$attach_pid" ]] || kill "$attach_pid" 2>/dev/null || true
+          apptainer instance stop "$name" || true
+          if [[ -n "$relay_pid" ]]; then
+            kill "$relay_pid" 2>/dev/null || true
+            wait "$relay_pid" 2>/dev/null || true
+          fi
+          [[ -z "$attach_pid" ]] || wait "$attach_pid" 2>/dev/null || true
+        }
+        trap cleanup_instance EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        trap 'exit 129' HUP
+        apptainer run "instance://$name" "$@" &
+        relay_pid=$!
+        # instance start returns before the relay creates its detached pane.
+        for ((attempt = 0; attempt < 60; attempt++)); do
+          if apptainer exec "instance://$name" tmux has-session -t contributor 2>/dev/null; then
+            # Preserve the terminal stdin for the background child; waiting on
+            # its PID lets signal traps run promptly while the pane is attached.
+            apptainer exec "instance://$name" tmux attach -t contributor <&0 &
+            attach_pid=$!
+            status=0
+            wait "$attach_pid" || status=$?
+            exit "$status"
+          fi
+          if ! kill -0 "$relay_pid" 2>/dev/null; then
+            status=0
+            wait "$relay_pid" || status=$?
+            echo "hive-contribute: relay exited before its tmux session was ready." >&2
+            [[ "$status" != 0 ]] || status=1
+            exit "$status"
+          fi
+          sleep 1
+        done
+        echo "hive-contribute: timed out waiting for the contributor tmux session." >&2
+        exit 1
+      }
+
       apptainer_run() {
         command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
         export_apptainer_env
         build_apptainer_args
-        exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
+        if [[ "${CONTRIBUTOR_MODE:-interactive}" == headless ]]; then
+          exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
+        fi
+        apptainer_interactive "$SIF_PATH" "$@"
+        exit $?
       }
 
       gvisor_engine() {
@@ -206,6 +267,7 @@ class Contribute < Formula
 
       docker_like_run() {
         local engine="$1"
+        shift
         local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
         [[ -t 0 && -t 1 ]] && args+=(-t)
         if [[ "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
@@ -253,7 +315,15 @@ class Contribute < Formula
         while IFS= read -r name; do
           printf 'export %s=%q\n' "$name" "${!name}"
         done < <(compgen -e APPTAINERENV_) >"$lima_env_file"
-        limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        if [[ "${CONTRIBUTOR_MODE:-interactive}" == headless ]]; then
+          limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        else
+          # Transfer the shared lifecycle code and bind array along with the
+          # environment; secrets remain in the private file, never in argv.
+          declare -p apptainer_args >>"$lima_env_file"
+          declare -f apptainer_interactive >>"$lima_env_file"
+          limactl shell apptainer bash -c '. "$1"; shift; apptainer_interactive "$@"' _ "$lima_env_file" "docker://$IMAGE_REF" "$@" || status=$?
+        fi
         rm -f "$lima_env_file"
         exit "$status"
       }
@@ -318,11 +388,15 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:0fe184775141bd60fde039fb2c3a8c9484ccf4775564a2e44e4f1e88b2c63deb
+        ghcr.io/hivecommons/hive-contributor@sha256:349fec1e8311e6211c42ef59991a0134eae33c5034e6235c89a0f8a580eb2072
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
       HIVE_CONTRIBUTE_RUNTIME=lima and an apptainer VM has been created.
+      Interactive Apptainer (Linux or Lima) starts a named instance and attaches
+      your terminal to the contributor tmux session; detaching stops the instance.
+      HIVE_CONTAINER_NAME overrides its default name, hive-contributor.
+      Set CONTRIBUTOR_MODE=headless for non-TTY use (foreground apptainer run).
 
       The wrapper does not claim automatic KVM/gVisor confinement for Apptainer.
       gVisor is only used when Docker/Podman is selected with
@@ -344,7 +418,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261023.124028.0fe184775141",
+      "hive-contribute 20261024.183837.349fec1e8311",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
   end
