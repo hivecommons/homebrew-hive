@@ -242,6 +242,7 @@
 
       docker_like_run() {
         local engine="$1"
+        shift
         local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
         [[ -t 0 && -t 1 ]] && args+=(-t)
         if [[ "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then

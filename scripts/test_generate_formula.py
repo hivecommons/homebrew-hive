@@ -907,9 +907,6 @@ class WrapperTests(unittest.TestCase):
             proc = self.run_wrapper(flag, env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
             self.assertNotIn("GH_TOKEN/GITHUB_TOKEN is not set", proc.stderr, flag)
 
-    # The engine name is currently forwarded as the first relay argument
-    # (hivecommons/homebrew-hive#70). Remove the decorator when that is fixed.
-    @unittest.expectedFailure
     def test_docker_hand_off_tail_is_image_then_relay_args(self):
         self.add_stub("docker")
         proc = self.run_wrapper("relay", "--flag", env={"HIVE_CONTRIBUTE_RUNTIME": "docker"})
