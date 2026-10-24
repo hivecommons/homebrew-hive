@@ -108,8 +108,8 @@ there is no channel to re-point and `convert.yml` never touches it. A bad
 Impact: new installs and upgrades build the bad tag from source. Installed
 copies keep working until upgraded.
 
-1. Detect: the `hotshot` workflow (macOS build and `brew test`) or `Tap CI`
-   fails on `main`, or users report the installed binary misbehaves.
+1. Detect: the weekly `hotshot formula (macOS)` workflow or `Tap CI` fails on
+   `main`, or users report the installed binary misbehaves.
 2. Revert the bump commit and open a PR against `main`:
 
    ```sh

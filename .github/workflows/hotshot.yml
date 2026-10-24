@@ -2,7 +2,7 @@ name: hotshot formula (macOS)
 
 # Formula/hotshot.rb is hand-maintained and macOS-only, so the Linux Tap CI
 # job can only style/audit it. This job builds it from source and runs the
-# formula test on a macOS runner whenever the formula (or this job) changes.
+# formula test weekly and whenever the formula (or this job) changes.
 on:
   pull_request:
     paths:
@@ -13,6 +13,8 @@ on:
     paths:
       - Formula/hotshot.rb
       - .github/workflows/hotshot.yml
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 permissions:

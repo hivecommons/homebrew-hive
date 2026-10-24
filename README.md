@@ -71,8 +71,8 @@ converts, and `convert.yml` fails if a run modifies any other file under
 `Formula/`. To bump `hotshot`, follow the checklist in
 [`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb);
 `.github/workflows/hotshot.yml` builds it from source and runs `brew test` on a
-macOS runner for PRs that touch it. The formula ships the CLI binary only; the
-double-clickable `Hotshot.app` bundle is still produced from a source checkout
+macOS runner for PRs that touch it and weekly on `main`. The formula ships the
+CLI binary only; the double-clickable `Hotshot.app` bundle is still produced
 with upstream's `scripts/bundle.sh`.
 
 ## Platform reality
