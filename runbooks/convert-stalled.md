@@ -48,7 +48,7 @@ producer of formula updates.
    | `publish` / Validate generated formula like Tap CI (`brew is not on the runner image`, `brew tap`, or `brew install` download) | Runner image dropped Homebrew (the step never bootstraps it from a remote script because this job holds a write token), or a network/GitHub outage while tapping or fetching the just-published SIF | Re-run with `force=true` (below). The release already exists, so "Re-run all jobs" and the next cron run skip it as "exists", while "Re-run failed jobs" reuses the stale `exists=false` and fails at "Publish release assets" with "refusing to clobber". |
    | `publish` / Validate generated formula like Tap CI (`brew style`, `brew audit --strict --new`, `brew install --build-from-source`, `<binary> --help`, `brew test`) | Generated formula or wrapper regression that `ruby -c` did not catch | Reproduce locally: `brew tap hivecommons/hive <checkout>`, then `brew style`, `brew audit --strict --new hivecommons/hive/contribute`, `brew install --build-from-source hivecommons/hive/contribute`, `brew test hivecommons/hive/contribute`. Fix `scripts/generate-formula.py` or `scripts/contribute-wrapper.sh.in` on a branch; the push to `main` reruns with `force` semantics. |
    | `resolve`, `build`, `publish`, or `notify-failure` / "The job running on runner ... has exceeded the maximum execution time of N minutes" | The job exceeded its `timeout-minutes` and was cancelled (`resolve` and `notify-failure` 10m, `build` 45m, `publish` 30m) | `build`: re-run the failed jobs; transient runner slowness often resolves. `publish`: re-run with `force=true` (below), because the release assets are usually already uploaded and "Re-run failed jobs" would fail with "refusing to clobber". If a job consistently exceeds the limit, raise its `timeout-minutes` in `convert.yml`. |
-   | Commit step / `gh pr` | Token permissions or branch protection | Check the repository's Actions permissions; a maintainer must adjust them. |
+   | Commit step / `gh pr` | Token permissions or branch protection | The token is the App's; check that the `HIVE_APP_ID` / `HIVE_APP_PRIVATE_KEY` secrets exist and that the App is installed on the repo with `contents` + `pull_requests` write permissions. |
 
 3. If the schedule is silently disabled, re-enable it in the Actions tab (or
    any push or manual dispatch to `convert.yml` resets the 60-day timer).
@@ -77,9 +77,10 @@ merge the PR as usual (needs a maintainer).
 - The newest `Convert Hive contributor image` run is green.
 - The `generated/contribute` PR references the current upstream `stable`
   digest, and the "Validate generated formula like Tap CI" step of the Convert
-  run that pushed it is green. `Tap CI` does not run on PRs the workflow opens
-  with `github.token` (it stays `action_required`); click "Approve and run"
-  on the PR's checks if you want it as well.
+  run that pushed it is green.   Tap CI runs on the generated PR because it is pushed with the hivecommons-hive
+  App token; if the publish job fails at "Create GitHub App token", the
+  `HIVE_APP_ID` / `HIVE_APP_PRIVATE_KEY` secrets are missing or the App is not
+  installed.
 - After merge: `brew update && brew upgrade hivecommons/hive/contribute &&
   hive-contribute --wrapper-version` prints the expected `image=` digest.
 
