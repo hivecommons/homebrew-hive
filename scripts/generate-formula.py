@@ -98,6 +98,10 @@ class {klass} < Formula
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
       HIVE_CONTRIBUTE_RUNTIME=lima and an apptainer VM has been created.
+      Interactive Apptainer (Linux or Lima) starts a named instance and attaches
+      your terminal to the contributor tmux session; detaching stops the instance.
+      HIVE_CONTAINER_NAME overrides its default name, hive-contributor.
+      Set CONTRIBUTOR_MODE=headless for non-TTY use (foreground apptainer run).
 
       The wrapper does not claim automatic KVM/gVisor confinement for Apptainer.
       gVisor is only used when Docker/Podman is selected with

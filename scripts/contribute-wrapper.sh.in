@@ -17,7 +17,9 @@
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
         macOS: docker, podman, or HIVE_CONTRIBUTE_RUNTIME=lima with a Lima apptainer VM.
         The Lima path forwards the same environment and mounts as native apptainer;
-        the host home must be shared into the VM at the same path AND writable
+        interactive Apptainer starts an instance and attaches to its tmux pane.
+        Set CONTRIBUTOR_MODE=headless for non-TTY use.
+        The host home must be shared into the VM at the same path AND writable
         (create the VM with --mount-writable; Lima's default home share is read-only).
 
       Required for real relay use: HIVE_REGISTRATION_TOKEN. Optional: HIVE_HUB,
@@ -135,6 +137,7 @@
           export "APPTAINERENV_${name}=${!name}"
         done < <(collect_env_names)
         export APPTAINERENV_HIVE_CONTAINER_RUNTIME=apptainer
+        export APPTAINERENV_HIVE_CONTAINER_NAME="${HIVE_CONTAINER_NAME:-hive-contributor}"
         while IFS='=' read -r name value; do
           export "APPTAINERENV_${name}=${value}"
         done < <(git_https_env)
@@ -166,11 +169,69 @@
         )
       }
 
+      # OCI-derived SIFs have a runscript, not a service startscript. Start an
+      # idle instance, then run the relay inside it so exec can reach its tmux.
+      # The shell owns the instance and traps; Lima runs this same function in
+      # the guest. Keep a supervising shell alive to stop the instance on exit.
+      apptainer_interactive() {
+        local image="$1" name="$APPTAINERENV_HIVE_CONTAINER_NAME"
+        local relay_pid="" attach_pid="" attempt status
+        shift
+        if [[ ! -t 0 || ! -t 1 ]]; then
+          echo "@BINARY@: interactive Apptainer needs a terminal; set CONTRIBUTOR_MODE=headless for non-TTY use." >&2
+          exit 2
+        fi
+        apptainer instance start "${apptainer_args[@]:1}" "$image" "$name" || exit $?
+        # Only install cleanup after start succeeds: a name collision must
+        # never stop another invocation's instance.
+        cleanup_instance() {
+          [[ -z "$attach_pid" ]] || kill "$attach_pid" 2>/dev/null || true
+          apptainer instance stop "$name" || true
+          if [[ -n "$relay_pid" ]]; then
+            kill "$relay_pid" 2>/dev/null || true
+            wait "$relay_pid" 2>/dev/null || true
+          fi
+          [[ -z "$attach_pid" ]] || wait "$attach_pid" 2>/dev/null || true
+        }
+        trap cleanup_instance EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        trap 'exit 129' HUP
+        apptainer run "instance://$name" "$@" &
+        relay_pid=$!
+        # instance start returns before the relay creates its detached pane.
+        for ((attempt = 0; attempt < 60; attempt++)); do
+          if apptainer exec "instance://$name" tmux has-session -t contributor 2>/dev/null; then
+            # Preserve the terminal stdin for the background child; waiting on
+            # its PID lets signal traps run promptly while the pane is attached.
+            apptainer exec "instance://$name" tmux attach -t contributor <&0 &
+            attach_pid=$!
+            status=0
+            wait "$attach_pid" || status=$?
+            exit "$status"
+          fi
+          if ! kill -0 "$relay_pid" 2>/dev/null; then
+            status=0
+            wait "$relay_pid" || status=$?
+            echo "@BINARY@: relay exited before its tmux session was ready." >&2
+            [[ "$status" != 0 ]] || status=1
+            exit "$status"
+          fi
+          sleep 1
+        done
+        echo "@BINARY@: timed out waiting for the contributor tmux session." >&2
+        exit 1
+      }
+
       apptainer_run() {
         command -v apptainer >/dev/null 2>&1 || { echo "apptainer is required on Linux; install it with Homebrew on Linux or your distro package manager." >&2; exit 127; }
         export_apptainer_env
         build_apptainer_args
-        exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
+        if [[ "${CONTRIBUTOR_MODE:-interactive}" == headless ]]; then
+          exec apptainer "${apptainer_args[@]}" "$SIF_PATH" "$@"
+        fi
+        apptainer_interactive "$SIF_PATH" "$@"
+        exit $?
       }
 
       gvisor_engine() {
@@ -228,7 +289,15 @@
         while IFS= read -r name; do
           printf 'export %s=%q\n' "$name" "${!name}"
         done < <(compgen -e APPTAINERENV_) >"$lima_env_file"
-        limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        if [[ "${CONTRIBUTOR_MODE:-interactive}" == headless ]]; then
+          limactl shell apptainer bash -c '. "$1"; shift; exec apptainer "$@"' _ "$lima_env_file" "${apptainer_args[@]}" "docker://$IMAGE_REF" "$@" || status=$?
+        else
+          # Transfer the shared lifecycle code and bind array along with the
+          # environment; secrets remain in the private file, never in argv.
+          declare -p apptainer_args >>"$lima_env_file"
+          declare -f apptainer_interactive >>"$lima_env_file"
+          limactl shell apptainer bash -c '. "$1"; shift; apptainer_interactive "$@"' _ "$lima_env_file" "docker://$IMAGE_REF" "$@" || status=$?
+        fi
         rm -f "$lima_env_file"
         exit "$status"
       }
