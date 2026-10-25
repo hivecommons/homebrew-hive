@@ -119,6 +119,17 @@ Two mechanisms now release the held run without a human:
    from the hive template when it changes, keeping the `GENERATED_AUTHORS` /
    `GENERATED_BRANCH_PREFIX` addition.
 
+GitHub creates no `pull_request` run at all (held or otherwise) for a PR that
+conflicts with `main` (`needs-rebase`); the self-release step reports this
+case separately. It only happens when `Formula/contribute.rb` was changed on
+`main` outside the pipeline, or when `convert.yml` was dispatched from a stale
+branch: the next run from `main` recreates `generated/contribute` from
+`main`'s HEAD and clears it. Always dispatch `convert.yml` from `main`; a
+dispatch from a feature branch that touches `.github/workflows/` also makes
+the publish push fail with `refusing to allow a GitHub App to create or
+update workflow ... without workflows permission` until the next run from
+`main` recreates the branch.
+
 If a generated PR still shows `Tap CI` as "action required":
 
 ```sh
