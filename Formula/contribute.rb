@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261025.064242.c7ae9c0ac2da"
+  version "20261025.133742.d2b0d5c8e260"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c7ae9c0ac2da/hive-contributor-arm64.sif"
-    sha256 "5bcc6db40bd4d867f35cb6b52138218905525daec67bb7303bc33dea5b6365e5"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d2b0d5c8e260/hive-contributor-arm64.sif"
+    sha256 "85a44ef165f2b9152640aaf95b4e1be5543a2e36e86bc02c0e9e787a7cdf5bdd"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c7ae9c0ac2da/hive-contributor-amd64.sif"
-    sha256 "3a279bb711be806c55a3fc497f776c184ad2245dba977a9331d349115421a54e"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d2b0d5c8e260/hive-contributor-amd64.sif"
+    sha256 "c58528d41f25c6593af3314ad68cc6bf4c2c94697e1e99fe9566ba7e9f54f452"
   end
 
   on_linux do
@@ -26,17 +26,25 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261025.064242.c7ae9c0ac2da"
+      WRAPPER_VERSION="20261025.133742.d2b0d5c8e260"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:c7ae9c0ac2daad52a2413821442463167d9af17629bcfac916261a3c04b2ddba"
-      IMAGE_DIGEST="sha256:c7ae9c0ac2daad52a2413821442463167d9af17629bcfac916261a3c04b2ddba"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:d2b0d5c8e2603cd3622d1c87105065fd92adb3e6226c9ee27812cb5e0c905832"
+      IMAGE_DIGEST="sha256:d2b0d5c8e2603cd3622d1c87105065fd92adb3e6226c9ee27812cb5e0c905832"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
+      # Interactive Apptainer attaches to the tmux session the contributor
+      # image creates inside the instance; the name is the image-side contract.
+      TMUX_SESSION="contributor"
+      TMUX_WAIT_SECONDS=60
 
       usage() {
         cat <<USAGE
       hive-contribute - run the Hive contributor relay (stable channel)
 
-      Usage: hive-contribute [--wrapper-version] [--wrapper-print-runtime] [--help] [relay args...]
+      Usage: hive-contribute [--wrapper-version] [--wrapper-print-runtime] [--wrapper-dry-run] [--help] [relay args...]
+
+      --wrapper-print-runtime prints the runtime the wrapper would select.
+      --wrapper-dry-run prints the resolved plan (runtime, mode, instance name,
+        tmux session, image, binds) without starting anything.
 
       Runtime selection:
         Linux:  apptainer (default), or docker/podman when HIVE_CONTRIBUTE_RUNTIME is set.
@@ -225,11 +233,11 @@ class Contribute < Formula
         apptainer run "instance://$name" "$@" &
         relay_pid=$!
         # instance start returns before the relay creates its detached pane.
-        for ((attempt = 0; attempt < 60; attempt++)); do
-          if apptainer exec "instance://$name" tmux has-session -t contributor 2>/dev/null; then
+        for ((attempt = 0; attempt < TMUX_WAIT_SECONDS; attempt++)); do
+          if apptainer exec "instance://$name" tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
             # Preserve the terminal stdin for the background child; waiting on
             # its PID lets signal traps run promptly while the pane is attached.
-            apptainer exec "instance://$name" tmux attach -t contributor <&0 &
+            apptainer exec "instance://$name" tmux attach -t "$TMUX_SESSION" <&0 &
             attach_pid=$!
             status=0
             wait "$attach_pid" || status=$?
@@ -244,7 +252,7 @@ class Contribute < Formula
           fi
           sleep 1
         done
-        echo "hive-contribute: timed out waiting for the contributor tmux session." >&2
+        echo "hive-contribute: timed out waiting for the $TMUX_SESSION tmux session." >&2
         exit 1
       }
 
@@ -320,7 +328,7 @@ class Contribute < Formula
         else
           # Transfer the shared lifecycle code and bind array along with the
           # environment; secrets remain in the private file, never in argv.
-          declare -p apptainer_args >>"$lima_env_file"
+          declare -p apptainer_args TMUX_SESSION TMUX_WAIT_SECONDS >>"$lima_env_file"
           declare -f apptainer_interactive >>"$lima_env_file"
           limactl shell apptainer bash -c '. "$1"; shift; apptainer_interactive "$@"' _ "$lima_env_file" "docker://$IMAGE_REF" "$@" || status=$?
         fi
@@ -333,35 +341,91 @@ class Contribute < Formula
         *) echo "unknown HIVE_CONTRIBUTE_RUNTIME=$requested_runtime" >&2; exit 2 ;;
       esac
 
-      if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
-        if [[ "$host_os" == linux* && "$requested_runtime" == auto ]]; then echo apptainer; exit 0; fi
+      # Prints the runtime the run path below would select, or "none" (status 1).
+      resolve_runtime() {
+        if [[ "$host_os" == linux* && "$requested_runtime" == auto ]]; then echo apptainer; return 0; fi
         if [[ "$requested_runtime" == gvisor ]]; then
-          gvisor_engine && exit 0
+          gvisor_engine && return 0
           echo none
-          exit 1
+          return 1
         fi
         if [[ "$requested_runtime" == auto ]]; then
           for runtime in docker podman lima; do
-            if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
-            if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; exit 0; fi
+            if [[ "$runtime" == lima ]] && command -v limactl >/dev/null 2>&1; then echo lima; return 0; fi
+            if command -v "$runtime" >/dev/null 2>&1; then echo "$runtime"; return 0; fi
           done
         else
           if [[ "$requested_runtime" == lima ]]; then
-            if command -v limactl >/dev/null 2>&1; then echo lima; exit 0; fi
+            if command -v limactl >/dev/null 2>&1; then echo lima; return 0; fi
           else
-            if command -v "$requested_runtime" >/dev/null 2>&1; then echo "$requested_runtime"; exit 0; fi
+            if command -v "$requested_runtime" >/dev/null 2>&1; then echo "$requested_runtime"; return 0; fi
           fi
         fi
         echo none
-        exit 1
+        return 1
+      }
+
+      if [[ "${1:-}" == "--wrapper-print-runtime" ]]; then
+        resolve_runtime
+        exit $?
+      fi
+
+      refuse_home_workspace() {
+        if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
+          echo "hive-contribute: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2
+          exit 2
+        fi
+      }
+
+      # Resolve exactly what the run path would do, without creating
+      # directories, forwarding secrets or invoking any engine. This is what
+      # the formula's `brew test` checks, since CI has no instance to start.
+      if [[ "${1:-}" == "--wrapper-dry-run" ]]; then
+        refuse_home_workspace
+        available=yes
+        if [[ "$requested_runtime" == auto ]]; then
+          runtime=$(resolve_runtime) || available=no
+        else
+          runtime="$requested_runtime"
+          resolve_runtime >/dev/null 2>&1 || available=no
+        fi
+        mode=interactive
+        [[ "${CONTRIBUTOR_MODE:-interactive}" != headless ]] || mode=headless
+        case "$runtime" in
+          apptainer) image="$SIF_PATH" ;;
+          lima) image="docker://$IMAGE_REF" ;;
+          *) image="$IMAGE_REF" ;;
+        esac
+        lifecycle=run
+        case "$runtime" in
+          apptainer|lima) [[ "$mode" == headless ]] || lifecycle=instance ;;
+        esac
+        printf '%s=%s\n' \
+          runtime "$runtime" \
+          runtime_available "$available" \
+          mode "$mode" \
+          lifecycle "$lifecycle" \
+          container_name "${HIVE_CONTAINER_NAME:-hive-contributor}" \
+          tmux_session "$TMUX_SESSION" \
+          tmux_wait_seconds "$TMUX_WAIT_SECONDS" \
+          image "$image" \
+          workspace "$workspace" \
+          config_dir "$config_dir" \
+          state_dir "$state_dir"
+        case "$runtime" in
+          apptainer|lima)
+            build_apptainer_args
+            for ((i = 0; i < ${#apptainer_args[@]}; i++)); do
+              [[ "${apptainer_args[i]}" == --bind ]] && printf 'bind=%s\n' "${apptainer_args[i + 1]}"
+            done
+            ;;
+        esac
+        exit 0
       fi
 
       mkdir -p "$workspace" "$config_dir" "$state_dir/home" "$state_dir/metrics"
 
-      if workspace_exposes_home "$workspace" && [[ "${HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE:-}" != 1 ]]; then
-        echo "hive-contribute: refusing to use $workspace as the workspace: it contains your home directory, so binding it would mount ~/.ssh, ~/.config/gh and every other credential directory into the container. Run from a project directory or set HIVE_WORKSPACE_DIR; set HIVE_CONTRIBUTE_ALLOW_HOME_WORKSPACE=1 to override." >&2
-        exit 2
-      fi
+      refuse_home_workspace
       warn_if_no_git_auth
 
       case "$requested_runtime" in
@@ -388,7 +452,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:c7ae9c0ac2daad52a2413821442463167d9af17629bcfac916261a3c04b2ddba
+        ghcr.io/hivecommons/hive-contributor@sha256:d2b0d5c8e2603cd3622d1c87105065fd92adb3e6226c9ee27812cb5e0c905832
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -418,8 +482,45 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261025.064242.c7ae9c0ac2da",
+      "hive-contribute 20261025.133742.d2b0d5c8e260",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
+    assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
+
+    # The dry run resolves the same plan the run path would execute, without
+    # a container engine, network or TTY, so the instance/tmux lifecycle
+    # contract is checked here even though CI cannot start an instance.
+    workspace = testpath/"workspace"
+    workspace.mkpath
+    plan = with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: workspace.to_s,
+                    CONTRIBUTOR_MODE: nil, HIVE_CONTAINER_NAME: nil) do
+      shell_output("#{bin}/hive-contribute --wrapper-dry-run")
+    end
+    assert_match "runtime=apptainer\n", plan
+    assert_match "mode=interactive\n", plan
+    assert_match "lifecycle=instance\n", plan
+    assert_match "container_name=hive-contributor\n", plan
+    assert_match "tmux_session=contributor\n", plan
+    assert_match "image=#{libexec}/hive-contributor-stable.sif\n", plan
+    assert_match "bind=#{workspace}:/home/dev/workspace\n", plan
+
+    headless = with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: workspace.to_s,
+                        CONTRIBUTOR_MODE: "headless", HIVE_CONTAINER_NAME: "relay-two") do
+      shell_output("#{bin}/hive-contribute --wrapper-dry-run")
+    end
+    assert_match "mode=headless\n", headless
+    assert_match "lifecycle=run\n", headless
+    assert_match "container_name=relay-two\n", headless
+
+    # Argument and environment contracts fail closed before any engine runs.
+    with_env(HIVE_CONTRIBUTE_RUNTIME: "bogus", HIVE_WORKSPACE_DIR: workspace.to_s) do
+      assert_match "unknown HIVE_CONTRIBUTE_RUNTIME=bogus",
+                   shell_output("#{bin}/hive-contribute --wrapper-dry-run 2>&1", 2)
+    end
+    with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: testpath.to_s) do
+      assert_match "refusing to use #{testpath} as the workspace",
+                   shell_output("#{bin}/hive-contribute --wrapper-dry-run 2>&1", 2)
+    end
+    refute_path_exists testpath/".config/hive", "dry run must not create directories"
   end
 end
