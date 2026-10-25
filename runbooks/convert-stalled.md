@@ -87,3 +87,10 @@ merge the PR as usual (needs a maintainer).
 
 If the pipeline was down for more than a day, record the window and cause in an
 issue using [postmortem-template.md](postmortem-template.md).
+
+## Automated detection
+
+The `convert freshness` workflow checks daily that a scheduled `convert.yml`
+run started within the last 12 hours (twice its 6-hour period). If not, it
+opens or updates an issue titled `Convert pipeline stale`, and closes it once
+a fresh scheduled run exists.

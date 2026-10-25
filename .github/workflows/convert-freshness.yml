@@ -1,0 +1,54 @@
+name: convert freshness
+
+# convert.yml runs every 6 hours; GitHub silently disables schedules on idle
+# repos and can drop runs, so nothing notices when they stop. This daily check
+# files a tracking issue when the newest scheduled convert.yml run is older
+# than twice that period.
+on:
+  schedule:
+    - cron: "43 7 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Open or update the tracking issue when stale, close it when fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAX_AGE_SECONDS: "43200"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Convert pipeline stale"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          latest=$(gh run list --workflow convert.yml --event schedule --limit 1 \
+            --json createdAt,conclusion --jq '.[0].createdAt // empty')
+          age=-1
+          if [ -n "$latest" ]; then
+            age=$(( $(date +%s) - $(date -d "$latest" +%s) ))
+          fi
+          if [ "$age" -lt 0 ] || [ "$age" -gt "$MAX_AGE_SECONDS" ]; then
+            if [ -n "$latest" ]; then
+              detail="The newest scheduled \`convert.yml\` run started at ${latest}, more than $(( MAX_AGE_SECONDS / 3600 )) hours ago."
+            else
+              detail="No scheduled \`convert.yml\` run was found."
+            fi
+            body="${detail} Checked by ${RUN_URL}"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --title "$title" \
+                --body "$body"$'\n\n'"See runbooks/convert-stalled.md. This issue closes automatically when this check finds a fresh scheduled run."
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Scheduled run started at ${latest}: ${RUN_URL}"
+          fi
