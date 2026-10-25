@@ -10,6 +10,7 @@ must live here. Ownership is therefore split **per file**, not per directory:
 | `contribute.rb` | generator | Rewritten by `.github/workflows/convert.yml` via `scripts/generate-formula.py` from the `stable` `ghcr.io/hivecommons/hive-contributor` digest. **Do not hand-edit.** |
 | `contribute-candidate.rb` (when generated) | generator | Same pipeline, `candidate` channel, installs `hive-contribute-candidate`. **Do not hand-edit.** |
 | `hotshot.rb` | hand-maintained | Edited by pull request. Builds [hivecommons/hotshot](https://github.com/hivecommons/hotshot) from its tagged source tarball. |
+| `crux.rb` | hand-maintained | Edited by pull request. Installs the prebuilt `crux` binary from a [hivecommons/crux](https://github.com/hivecommons/crux) GitHub release (darwin/linux × arm64/amd64). |
 | `README.md` | hand-maintained | This file. |
 
 The generator writes only `Formula/<formula>.rb` for the channel it is
@@ -30,7 +31,7 @@ If a generated formula is wrong, fix `scripts/generate-formula.py` or
 `.github/workflows/convert.yml`; the next conversion run overwrites manual
 edits to `contribute*.rb`.
 
-## Hand-maintained formulae (`hotshot.rb`)
+## Hand-maintained formulae (`hotshot.rb`, `crux.rb`)
 
 To bump `hotshot` to a new upstream tag `vX.Y.Z`:
 
@@ -43,3 +44,18 @@ To bump `hotshot` to a new upstream tag `vX.Y.Z`:
    `brew tap hivecommons/hive "$PWD" && brew audit --strict --new hivecommons/hive/hotshot && brew install --build-from-source hivecommons/hive/hotshot && brew test hivecommons/hive/hotshot`.
 5. Open a PR. `.github/workflows/hotshot.yml` repeats step 4 on a macOS
    runner; `Tap CI` styles and audits it on Linux.
+
+To bump `crux` to a new upstream tag `vX.Y.Z`:
+
+1. Confirm the tag and GitHub Release exist at hivecommons/crux (releases
+   are cut by tagging hivecommons/hive `crux/vX.Y.Z`; the hive `crux-sync`
+   workflow pushes `vX.Y.Z` to hivecommons/crux and its release workflow
+   publishes the archives).
+2. Fetch the four sha256s from the release's `checksums.txt`:
+   `curl -sL https://github.com/hivecommons/crux/releases/download/vX.Y.Z/checksums.txt`
+3. Update the version in the four `url` lines and the four `sha256` lines in
+   `Formula/crux.rb` (no `version` stanza: brew scans it from the URLs).
+4. Run `brew style --fix Formula/crux.rb`, then
+   `brew tap hivecommons/hive "$PWD" && brew audit --strict --new hivecommons/hive/crux && brew install hivecommons/hive/crux && brew test hivecommons/hive/crux`.
+5. Open a PR. `.github/workflows/crux.yml` repeats step 4 on macOS and
+   Linux; `Tap CI` styles and audits it.
