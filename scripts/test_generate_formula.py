@@ -194,7 +194,8 @@ class RenderTests(unittest.TestCase):
             with self.subTest(channel=args.channel):
                 text = gen.render(args)
                 self.assertIn('apptainer instance start', text)
-                self.assertIn('apptainer exec "instance://$name" tmux attach -t contributor', text)
+                self.assertIn('TMUX_SESSION="contributor"', text)
+                self.assertIn('apptainer exec "instance://$name" tmux attach -t "$TMUX_SESSION"', text)
                 self.assertIn('apptainer_args=(run --containall', text)
                 self.assertIn('Set CONTRIBUTOR_MODE=headless for non-TTY use', text)
                 self.assertIn('Interactive Apptainer (Linux or Lima) starts a named instance', text)
@@ -209,6 +210,20 @@ class RenderTests(unittest.TestCase):
         text = gen.render(args)
         self.assertIn(f'"hive-contribute {gen.formula_version(args)}"', text)
         self.assertIn('shell_output("#{bin}/hive-contribute --wrapper-version")', text)
+
+    def test_formula_test_block_covers_help_dry_run_and_fail_closed_paths(self):
+        text = gen.render(make_args())
+        self.assertIn('shell_output("#{bin}/hive-contribute --help")', text)
+        self.assertIn('shell_output("#{bin}/hive-contribute --wrapper-dry-run")', text)
+        for line in ("runtime=apptainer", "mode=interactive", "lifecycle=instance", "mode=headless",
+                     "lifecycle=run", "container_name=hive-contributor", "container_name=relay-two",
+                     "tmux_session=contributor", "image=#{libexec}/hive-contributor-stable.sif",
+                     "bind=#{workspace}:/home/dev/workspace"):
+            self.assertIn(f'"{line}\\n"', text, line)
+        self.assertIn('shell_output("#{bin}/hive-contribute --wrapper-dry-run 2>&1", 2)', text)
+        self.assertIn("unknown HIVE_CONTRIBUTE_RUNTIME=bogus", text)
+        self.assertIn("refusing to use #{testpath} as the workspace", text)
+        self.assertIn('refute_path_exists testpath/".config/hive"', text)
 
     @unittest.skipUnless(shutil.which("ruby"), "ruby not installed")
     def test_rendered_formula_is_valid_ruby(self):
@@ -403,6 +418,83 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertFalse((self.home / ".config" / "hive").exists())
         self.assertFalse((self.home / ".local" / "state" / "hive" / "contribute").exists())
+
+    def parse_plan(self, stdout):
+        plan, binds = {}, []
+        for line in stdout.splitlines():
+            key, _, value = line.partition("=")
+            if key == "bind":
+                binds.append(value)
+            else:
+                plan[key] = value
+        return plan, binds
+
+    def test_dry_run_reports_instance_lifecycle_without_any_engine(self):
+        proc = self.run_wrapper("--wrapper-dry-run", env={
+            "HIVE_CONTRIBUTE_RUNTIME": "apptainer", "CONTRIBUTOR_MODE": None,
+            "GH_TOKEN": "secret-token",
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, binds = self.parse_plan(proc.stdout)
+        self.assertEqual(plan["runtime"], "apptainer")
+        self.assertEqual(plan["runtime_available"], "no")
+        self.assertEqual(plan["mode"], "interactive")
+        self.assertEqual(plan["lifecycle"], "instance")
+        self.assertEqual(plan["container_name"], "hive-contributor")
+        self.assertEqual(plan["tmux_session"], "contributor")
+        self.assertEqual(plan["tmux_wait_seconds"], "60")
+        self.assertEqual(plan["image"], str(self.libexec / "hive-contributor-stable.sif"))
+        self.assertEqual(plan["workspace"], str(self.tmp / "workspace"))
+        self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", binds)
+        self.assertIn(f"{self.home}/.config/hive:/home/dev/.config/hive", binds)
+        self.assertNotIn("secret-token", proc.stdout)
+        self.assertFalse(self.stub_out.exists())
+        self.assertFalse((self.tmp / "workspace").exists(), "dry run must not create the workspace")
+        self.assertFalse((self.home / ".config" / "hive").exists())
+        self.assertFalse((self.home / ".local" / "state" / "hive" / "contribute").exists())
+
+    def test_dry_run_matches_run_path_contract(self):
+        """The plan must name what the real lifecycle actually uses."""
+        self.add_instance_stubs()
+        proc = self.run_wrapper("--wrapper-dry-run", env={
+            "HIVE_CONTRIBUTE_RUNTIME": "apptainer", "CONTRIBUTOR_MODE": None,
+            "HIVE_CONTAINER_NAME": "relay-two",
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, binds = self.parse_plan(proc.stdout)
+        self.assertEqual(plan["runtime_available"], "yes")
+        self.reset_instance_records()
+        proc = self.run_wrapper("relay", tty=True, env={
+            "HIVE_CONTRIBUTE_RUNTIME": "apptainer", "CONTRIBUTOR_MODE": None,
+            "HIVE_CONTAINER_NAME": "relay-two",
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = [record["argv"] for record in self.instance_records()]
+        self.assertEqual(calls[0][-2:], [plan["image"], plan["container_name"]])
+        self.assertIn(["exec", f"instance://{plan['container_name']}", "tmux", "attach", "-t", plan["tmux_session"]], calls)
+        self.assertEqual([calls[0][i + 1] for i, a in enumerate(calls[0]) if a == "--bind"], binds)
+
+    def test_dry_run_headless_lima_and_docker_plans(self):
+        proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": "lima"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, binds = self.parse_plan(proc.stdout)
+        self.assertEqual((plan["runtime"], plan["mode"], plan["lifecycle"]), ("lima", "headless", "run"))
+        self.assertEqual(plan["image"], f"docker://{self.args.image_ref}")
+        self.assertTrue(binds)
+        proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": "docker", "CONTRIBUTOR_MODE": None})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, binds = self.parse_plan(proc.stdout)
+        self.assertEqual((plan["runtime"], plan["mode"], plan["lifecycle"]), ("docker", "interactive", "run"))
+        self.assertEqual(binds, [])
+
+    def test_dry_run_fails_closed_like_the_run_path(self):
+        proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": "firecracker"})
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("unknown HIVE_CONTRIBUTE_RUNTIME=firecracker", proc.stderr)
+        proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", "HIVE_WORKSPACE_DIR": str(self.home)})
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("refusing to use", proc.stderr)
+        self.assertEqual(proc.stdout, "")
 
     def test_missing_apptainer_fails_with_127(self):
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})

@@ -126,6 +126,43 @@ class {klass} < Formula
       "{binary} {ruby_quote(formula_version(args))}",
       shell_output("#{{bin}}/{binary} --wrapper-version"),
     )
+    assert_match "Usage: {binary}", shell_output("#{{bin}}/{binary} --help")
+
+    # The dry run resolves the same plan the run path would execute, without
+    # a container engine, network or TTY, so the instance/tmux lifecycle
+    # contract is checked here even though CI cannot start an instance.
+    workspace = testpath/"workspace"
+    workspace.mkpath
+    plan = with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: workspace.to_s,
+                    CONTRIBUTOR_MODE: nil, HIVE_CONTAINER_NAME: nil) do
+      shell_output("#{{bin}}/{binary} --wrapper-dry-run")
+    end
+    assert_match "runtime=apptainer\\n", plan
+    assert_match "mode=interactive\\n", plan
+    assert_match "lifecycle=instance\\n", plan
+    assert_match "container_name=hive-contributor\\n", plan
+    assert_match "tmux_session=contributor\\n", plan
+    assert_match "image=#{{libexec}}/{sif}\\n", plan
+    assert_match "bind=#{{workspace}}:/home/dev/workspace\\n", plan
+
+    headless = with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: workspace.to_s,
+                        CONTRIBUTOR_MODE: "headless", HIVE_CONTAINER_NAME: "relay-two") do
+      shell_output("#{{bin}}/{binary} --wrapper-dry-run")
+    end
+    assert_match "mode=headless\\n", headless
+    assert_match "lifecycle=run\\n", headless
+    assert_match "container_name=relay-two\\n", headless
+
+    # Argument and environment contracts fail closed before any engine runs.
+    with_env(HIVE_CONTRIBUTE_RUNTIME: "bogus", HIVE_WORKSPACE_DIR: workspace.to_s) do
+      assert_match "unknown HIVE_CONTRIBUTE_RUNTIME=bogus",
+                   shell_output("#{{bin}}/{binary} --wrapper-dry-run 2>&1", 2)
+    end
+    with_env(HIVE_CONTRIBUTE_RUNTIME: "apptainer", HIVE_WORKSPACE_DIR: testpath.to_s) do
+      assert_match "refusing to use #{{testpath}} as the workspace",
+                   shell_output("#{{bin}}/{binary} --wrapper-dry-run 2>&1", 2)
+    end
+    refute_path_exists testpath/".config/hive", "dry run must not create directories"
   end
 end
 '''
