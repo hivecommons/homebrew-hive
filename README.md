@@ -185,6 +185,15 @@ These diagnostic flags do not launch the relay; pass each as the first argument:
   without checking that it is installed. It exits before creating any of the
   directories above. An unrecognised `HIVE_CONTRIBUTE_RUNTIME` value is
   rejected with exit status 2, the same as a real run.
+- `hive-contribute --wrapper-dry-run` prints the plan a real run would
+  execute as `key=value` lines (`runtime`, `runtime_available`, `mode`,
+  `lifecycle` = `instance` for interactive Apptainer/Lima or `run` otherwise,
+  `container_name`, `tmux_session`, `tmux_wait_seconds`, `image`,
+  `workspace`, `config_dir`, `state_dir`, and one `bind=` line per Apptainer
+  bind) without starting an engine, forwarding secrets, or creating
+  directories. It applies the same checks as a real run (unknown runtime and
+  home-directory workspace both exit 2). The formula's `brew test` uses it to
+  check the instance/tmux lifecycle contract in CI, where no instance can run.
 - `hive-contribute --help` (or `-h`) prints wrapper usage.
 
 ## Automation
