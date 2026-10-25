@@ -52,6 +52,7 @@ producer of formula updates.
    | `publish` / Validate generated formula like Tap CI (`brew style`, `brew audit --strict --new`, `brew install --build-from-source`, `<binary> --help`, `brew test`) | Generated formula or wrapper regression that `ruby -c` did not catch | Reproduce locally: `brew tap hivecommons/hive <checkout>`, then `brew style`, `brew audit --strict --new hivecommons/hive/contribute`, `brew install --build-from-source hivecommons/hive/contribute`, `brew test hivecommons/hive/contribute`. Fix `scripts/generate-formula.py` or `scripts/contribute-wrapper.sh.in` on a branch; the push to `main` reruns with `force` semantics. |
    | `resolve`, `build`, `publish`, or `notify-failure` / "The job running on runner ... has exceeded the maximum execution time of N minutes" | The job exceeded its `timeout-minutes` and was cancelled (`resolve` and `notify-failure` 10m, `build` 45m, `publish` 30m) | `build`: re-run the failed jobs; transient runner slowness often resolves. `publish`: re-run with `force=true` (below), because the release assets are usually already uploaded and "Re-run failed jobs" would fail with "refusing to clobber". If a job consistently exceeds the limit, raise its `timeout-minutes` in `convert.yml`. |
    | Commit step / `gh pr` | Token permissions or branch protection | Check the repository's Actions permissions; a maintainer must adjust them. |
+   | `publish` / Release held Tap CI run (`::warning::no action_required run appeared`) or the generated PR shows `Tap CI` as "action required" | GitHub held the PR's `Tap CI` run because the author is `github-actions[bot]`, and neither the self-release step nor `hive-ok-to-test.yml` approved it | See [Held Tap CI on generated PRs](#held-tap-ci-on-generated-prs). |
 
 3. If the schedule is silently disabled, re-enable it in the Actions tab (or
    any push or manual dispatch to `convert.yml` resets the 60-day timer).
@@ -79,12 +80,60 @@ merge the PR as usual (needs a maintainer).
 
 - The newest `Convert Hive contributor image` run is green.
 - The `generated/contribute` PR references the current upstream `stable`
-  digest, and the "Validate generated formula like Tap CI" step of the Convert
-  run that pushed it is green. `Tap CI` does not run on PRs the workflow opens
-  with `github.token` (it stays `action_required`); click "Approve and run"
-  on the PR's checks if you want it as well.
+  digest, the "Validate generated formula like Tap CI" step of the Convert
+  run that pushed it is green, and the PR's own `Tap CI` check is green (not
+  "action required"; see [Held Tap CI on generated PRs](#held-tap-ci-on-generated-prs)).
 - After merge: `brew update && brew upgrade hivecommons/hive/contribute &&
   hive-contribute --wrapper-version` prints the expected `image=` digest.
+
+## Held Tap CI on generated PRs
+
+GitHub creates the `pull_request` `Tap CI` run for every PR that `convert.yml`
+opens, but holds it in `action_required` because the PR author is
+`github-actions[bot]` (the workflow pushes and opens the PR with
+`github.token`). Prow's `tide` will not merge without the check, and on this
+repository `/ok-to-test` belongs to Prow, which only honours it from trusted
+users and rejects Hive's `hivecommons-hive[bot]`; Hive then stops with
+`<!-- hive-ok-to-test-rejected -->` and asks for a human. #110 and #144 stalled
+on this.
+
+Two mechanisms now release the held run without a human:
+
+1. **`convert.yml` self-release.** After the `publish` job pushes the branch
+   and opens or updates the PR, its "Release held Tap CI run on the generated
+   PR" step (job permission `actions: write`) polls for up to two minutes for
+   `status=action_required` runs on exactly the head SHA it pushed and
+   `POST /actions/runs/{id}/approve`s them. This is safe because the same job
+   already ran `brew style`, `brew audit --strict --new`, `brew install
+   --build-from-source` and `brew test` on that formula.
+2. **`.github/workflows/hive-ok-to-test.yml`** (fallback). Hive's
+   self-contained ok-to-test workflow, rendered from `hivectl
+   ok-to-test-template`. When `hivecommons-hive[bot]` (or anyone with write)
+   comments exactly `/ok-to-test` on a same-repository PR, the repository
+   `GITHUB_TOKEN` approves that head's held runs. Besides the template's
+   default trusted authors (`dependabot[bot]`, `renovate[bot]`, the Hive App),
+   it trusts `github-actions[bot]` **only when the head branch starts with
+   `generated/`**; it never approves fork heads or PRs labelled
+   `sentinel-alert`. Prow will still post its own rejection comment for Hive's
+   `/ok-to-test`; that is noise, the workflow run is what matters. Re-render
+   from the hive template when it changes, keeping the `GENERATED_AUTHORS` /
+   `GENERATED_BRANCH_PREFIX` addition.
+
+If a generated PR still shows `Tap CI` as "action required":
+
+```sh
+gh run list --repo hivecommons/homebrew-hive --branch generated/contribute --limit 3
+gh api -X POST repos/hivecommons/homebrew-hive/actions/runs/<run-id>/approve
+```
+
+then check why the self-release step warned (run log of the Convert run that
+pushed the head) and whether `hive-ok-to-test.yml` ran on Hive's comment
+(`gh run list --workflow hive-ok-to-test.yml`). The repository setting
+`actions/permissions/fork-pr-contributor-approval` is already the least strict
+(`first_time_contributors_new_to_github`); the hold is GitHub's policy for
+PRs authored by `github-actions[bot]`, not the fork policy. Opening the PR
+with a Hive App token (author `hivecommons-hive[bot]`) would avoid the hold
+entirely, but this repository has no App credentials configured.
 
 ## Follow-up
 
