@@ -368,6 +368,7 @@
         [[ "${CONTRIBUTOR_MODE:-interactive}" != headless ]] || mode=headless
         case "$runtime" in
           apptainer) image="$SIF_PATH" ;;
+          lima) image="docker://$IMAGE_REF" ;;
           *) image="$IMAGE_REF" ;;
         esac
         lifecycle=run

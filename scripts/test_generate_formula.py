@@ -479,7 +479,7 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         plan, binds = self.parse_plan(proc.stdout)
         self.assertEqual((plan["runtime"], plan["mode"], plan["lifecycle"]), ("lima", "headless", "run"))
-        self.assertEqual(plan["image"], self.args.image_ref)
+        self.assertEqual(plan["image"], f"docker://{self.args.image_ref}")
         self.assertTrue(binds)
         proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": "docker", "CONTRIBUTOR_MODE": None})
         self.assertEqual(proc.returncode, 0, proc.stderr)
