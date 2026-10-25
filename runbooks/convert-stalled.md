@@ -17,6 +17,9 @@ producer of formula updates.
 - The latest `Convert Hive contributor image` run on `main` is red, or the
   latest scheduled run is older than ~12 hours (cron is `17 */6 * * *`).
 - A scheduled failure opens a `Convert pipeline failing` issue.
+- The daily `convert freshness` workflow opens a `Convert pipeline stale`
+  issue when no scheduled run started in the last ~12 hours (see
+  [Automated detection](#automated-detection)).
 - `hive-contribute --wrapper-version` on a fresh install prints an `image=`
   digest that differs from the current upstream `stable` digest:
 
@@ -90,7 +93,14 @@ issue using [postmortem-template.md](postmortem-template.md).
 
 ## Automated detection
 
-The `convert freshness` workflow checks daily that a scheduled `convert.yml`
-run started within the last 12 hours (twice its 6-hour period). If not, it
-opens or updates an issue titled `Convert pipeline stale`, and closes it once
-a fresh scheduled run exists.
+The `convert freshness` workflow (`.github/workflows/convert-freshness.yml`)
+checks daily that a scheduled `convert.yml` run started within the last 12
+hours (twice its 6-hour period). If not, it opens or updates an issue titled
+`Convert pipeline stale`, and closes it at the next daily check that finds a
+fresh scheduled run (so up to ~24 hours after recovery).
+
+Limitation: the freshness workflow is itself schedule-triggered, so GitHub's
+60-day inactivity disable turns it off together with `convert.yml` and no
+issue is filed in that case. It does catch dropped or delayed runs, a manual
+disable of `convert.yml`, and early-stage failures. The manual staleness check
+in [Detect](#detect) remains the fallback for the inactivity case.

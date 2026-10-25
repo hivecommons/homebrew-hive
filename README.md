@@ -213,6 +213,13 @@ write scopes per job: `contents: write` / `pull-requests: write` to the publish
 job, and `issues: write` to the failure-notification job that opens, updates
 and closes the "Convert pipeline failing" tracking issue.
 
+`.github/workflows/convert-freshness.yml` runs daily and opens, updates and
+closes a "Convert pipeline stale" tracking issue when the newest scheduled
+`convert.yml` run is older than 12 hours (its job holds `actions: read` and
+`issues: write`). Because it is schedule-triggered too, GitHub's 60-day
+inactivity disable silences it along with `convert.yml`; see
+[`runbooks/convert-stalled.md`](runbooks/convert-stalled.md#automated-detection).
+
 ## Testing the generator
 
 `scripts/test_generate_formula.py` renders the formula with fixed inputs and
