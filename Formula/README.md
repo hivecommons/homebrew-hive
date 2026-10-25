@@ -53,7 +53,8 @@ To bump `crux` to a new upstream tag `vX.Y.Z`:
    publishes the archives).
 2. Fetch the four sha256s from the release's `checksums.txt`:
    `curl -sL https://github.com/hivecommons/crux/releases/download/vX.Y.Z/checksums.txt`
-3. Update `version` and the four `sha256` lines in `Formula/crux.rb`.
+3. Update the version in the four `url` lines and the four `sha256` lines in
+   `Formula/crux.rb` (no `version` stanza: brew scans it from the URLs).
 4. Run `brew style --fix Formula/crux.rb`, then
    `brew tap hivecommons/hive "$PWD" && brew audit --strict --new hivecommons/hive/crux && brew install hivecommons/hive/crux && brew test hivecommons/hive/crux`.
 5. Open a PR. `.github/workflows/crux.yml` repeats step 4 on macOS and
