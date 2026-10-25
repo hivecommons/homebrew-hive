@@ -1,0 +1,96 @@
+name: crux formula
+
+# Formula/crux.rb is hand-maintained and installs prebuilt release binaries
+# for macOS and Linux. Tap CI styles and audits it; this job installs it on
+# both platforms and runs the formula test whenever it (or this job) changes,
+# and weekly as a drift signal.
+on:
+  pull_request:
+    paths:
+      - Formula/crux.rb
+      - .github/workflows/crux.yml
+  push:
+    branches: [main]
+    paths:
+      - Formula/crux.rb
+      - .github/workflows/crux.yml
+  schedule:
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crux:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Homebrew on Linux
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          if ! command -v brew >/dev/null 2>&1; then
+            NONINTERACTIVE=1 CI=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          fi
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "/home/linuxbrew/.linuxbrew/sbin" >> "$GITHUB_PATH"
+
+      - name: Tap this checkout
+        run: |
+          set -euo pipefail
+          # `brew tap <path>` clones committed HEAD, so overlay the PR's working
+          # copy of the formula into the tap before installing it.
+          brew tap hivecommons/hive "$PWD"
+          cp Formula/crux.rb "$(brew --repository hivecommons/hive)/Formula/crux.rb"
+
+      - name: Style and audit
+        run: |
+          set -euo pipefail
+          brew style Formula/crux.rb
+          brew audit --strict --new hivecommons/hive/crux
+
+      - name: Install and test
+        run: |
+          set -euo pipefail
+          brew install hivecommons/hive/crux
+          crux --version
+          brew test hivecommons/hive/crux
+
+  notify-failure:
+    needs: [crux]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue on failure, close it on success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ needs.crux.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="crux formula failing"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ "$RESULT" = failure ]; then
+            body="The \`${GITHUB_WORKFLOW}\` run failed (crux: ${RESULT}): ${RUN_URL}"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --title "$title" \
+                --body "$body"$'\n\n'"Formula/crux.rb no longer installs on the current runners; check the hivecommons/crux release assets it points at. This issue closes automatically when a later scheduled run succeeds."
+            fi
+          elif [ "$RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
+          fi
