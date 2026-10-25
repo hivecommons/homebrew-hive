@@ -17,6 +17,7 @@ producer of formula updates.
 - The latest `Convert Hive contributor image` run on `main` is red, or the
   latest scheduled run is older than ~12 hours (cron is `17 */6 * * *`).
 - A scheduled failure opens a `Convert pipeline failing` issue.
+  It closes only when a later scheduled run publishes successfully; a run skipped as "exists" leaves it open, so recover with `force=true` (see Recover).
 - `hive-contribute --wrapper-version` on a fresh install prints an `image=`
   digest that differs from the current upstream `stable` digest:
 

@@ -337,6 +337,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RESULTS: ${{ needs.resolve.result }} ${{ needs.build.result }} ${{ needs.publish.result }}
+          PUBLISH: ${{ needs.publish.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -351,6 +352,8 @@ jobs:
               gh issue create --title "$title" \
                 --body "$body"$'\n\n'"See runbooks/convert-stalled.md. This issue closes automatically when a later scheduled run succeeds."
             fi
-          elif [[ " $RESULTS " != *" cancelled "* && "$GITHUB_EVENT_NAME" = schedule && -n "$existing" ]]; then
+          # Close only after an actual publish: a run skipped as "release exists"
+          # regenerated nothing, so the tracking issue stays open.
+          elif [ "$PUBLISH" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
             gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
           fi
