@@ -1,7 +1,8 @@
 # Runbook: roll back a formula
 
 Use this when a merged `Formula/contribute.rb` (or `contribute-candidate.rb`)
-installs a broken, wrong, or unwanted `hive-contributor` image.
+installs a broken, wrong, or unwanted `hive-contributor` image. Hand-maintained
+formulae (`hotshot`, `crux`) have their own sections at the end.
 
 ## Impact
 
@@ -132,5 +133,49 @@ copies keep working until upgraded.
    ```
 
 If the bad tag is upstream's fault, fix or re-tag upstream and bump forward
-using the checklist in [`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb).
+using the checklist in [`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb).
+Record the incident with [postmortem-template.md](postmortem-template.md).
+
+## Rolling back `crux` (hand-maintained)
+
+`Formula/crux.rb` is not generated, so Options A and B do not apply. A bad
+`crux` is a bad version, `url` or `sha256` bump (or a broken `test do` block)
+merged to `main`. It installs prebuilt release tarballs, not a source build.
+
+Impact: new installs and upgrades get the bad release. Installed copies keep
+working until upgraded.
+
+1. Detect: `Tap CI` or the `crux` workflow fails on `main`, or users report the
+   installed `crux` misbehaves (`crux --version`, `crux serve`).
+2. Revert the bump commit and open a PR against `main`:
+
+   ```sh
+   git switch -c revert-crux-<bad-tag> origin/main
+   git revert --no-edit <bad-merge-commit>
+   git commit --amend -s --no-edit
+   git push origin HEAD
+   ```
+
+3. Wait for `Tap CI` and the `crux` workflow to pass, then merge (needs a
+   maintainer). Confirm every restored `url` still resolves (all four
+   darwin/linux x arm64/amd64 assets) and that the release's `checksums.txt`
+   still matches the formula `sha256` values:
+
+   ```sh
+   curl -sIL -o /dev/null -w '%{http_code}\n' <restored-url>
+   curl -sL https://github.com/hivecommons/crux/releases/download/<restored-tag>/checksums.txt
+   ```
+
+4. Users who already installed the bad version have a higher version than the
+   restored formula, so `brew upgrade` will not downgrade them:
+
+   ```sh
+   brew update
+   brew reinstall hivecommons/hive/crux
+   crux --version
+   ```
+
+If the bad release is upstream's fault, fix it in hivecommons/hive (`src/crux`),
+cut a new `crux/vX.Y.Z` tag, and bump forward using the checklist in
+[`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb).
 Record the incident with [postmortem-template.md](postmortem-template.md).
