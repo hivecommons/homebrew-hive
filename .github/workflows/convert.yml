@@ -357,7 +357,14 @@ jobs:
             sleep 10
           done
           if [ "$approved" -eq 0 ]; then
-            echo "::warning::no action_required run appeared for ${HEAD_SHA} within 2 minutes; Tap CI may still need approval on PR #${PR}"
+            # GitHub creates no pull_request run at all for a PR that conflicts
+            # with its base, so distinguish that from a slow or missing hold.
+            mergeable=$(gh pr view "$PR" --json mergeable --jq .mergeable || echo UNKNOWN)
+            if [ "$mergeable" = "CONFLICTING" ]; then
+              echo "::warning::PR #${PR} conflicts with main, so GitHub created no Tap CI run for ${HEAD_SHA}; the next run from main recreates the branch"
+            else
+              echo "::warning::no action_required run appeared for ${HEAD_SHA} within 2 minutes (mergeable=${mergeable}); Tap CI may still need approval on PR #${PR}"
+            fi
           fi
 
   notify-failure:
