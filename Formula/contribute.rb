@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261025.133742.d2b0d5c8e260"
+  version "20261025.140120.d2b0d5c8e260"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d2b0d5c8e260/hive-contributor-arm64.sif"
-    sha256 "85a44ef165f2b9152640aaf95b4e1be5543a2e36e86bc02c0e9e787a7cdf5bdd"
+    sha256 "164e9b46d1132eded5115d5dfaffe04701a1b6faa3f4664ea87bc0687cfc7877"
   else
     url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d2b0d5c8e260/hive-contributor-amd64.sif"
-    sha256 "c58528d41f25c6593af3314ad68cc6bf4c2c94697e1e99fe9566ba7e9f54f452"
+    sha256 "4bbd4d08bf474ceb1fad954e1ee94034928978c10050784b409209561c94394d"
   end
 
   on_linux do
@@ -26,7 +26,7 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261025.133742.d2b0d5c8e260"
+      WRAPPER_VERSION="20261025.140120.d2b0d5c8e260"
       CHANNEL="stable"
       IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:d2b0d5c8e2603cd3622d1c87105065fd92adb3e6226c9ee27812cb5e0c905832"
       IMAGE_DIGEST="sha256:d2b0d5c8e2603cd3622d1c87105065fd92adb3e6226c9ee27812cb5e0c905832"
@@ -482,7 +482,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261025.133742.d2b0d5c8e260",
+      "hive-contribute 20261025.140120.d2b0d5c8e260",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
