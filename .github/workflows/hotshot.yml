@@ -34,6 +34,8 @@ jobs:
           # `brew tap <path>` clones committed HEAD, so overlay the PR's working
           # copy of the formula into the tap before building it.
           brew tap hivecommons/hive "$PWD"
+          # Homebrew now refuses to load formulae from non-official taps until trusted.
+          brew trust hivecommons/hive 2>/dev/null || true
           cp Formula/hotshot.rb "$(brew --repository hivecommons/hive)/Formula/hotshot.rb"
 
       - name: Style and audit
