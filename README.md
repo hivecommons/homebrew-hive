@@ -16,6 +16,13 @@ brew install hivecommons/hive/hotshot
 hotshot &
 ```
 
+and [crux](https://github.com/hivecommons/crux), the governed AI agent
+runtime from Hive:
+
+```sh
+brew install hivecommons/hive/crux
+```
+
 The contribute formula exists so that contributing to a Hive does not require cloning a repository
 first. The formula wraps the published `ghcr.io/hivecommons/hive-contributor`
 container image, converted to a self-contained [Apptainer](https://apptainer.org)
@@ -65,17 +72,23 @@ and ownership is tracked per file in [`Formula/README.md`](Formula/README.md):
 |---|---|---|---|
 | `contribute` | `hive-contribute` | generated from the `hive-contributor` image | `convert.yml` |
 | `hotshot` | `hotshot` | `swift build -c release` of the tagged [hivecommons/hotshot](https://github.com/hivecommons/hotshot) tarball (macOS 13+, Xcode 15+) | pull requests |
+| `crux` | `crux` | prebuilt release binaries from [hivecommons/crux](https://github.com/hivecommons/crux) (darwin/linux × arm64/amd64) | pull requests |
 
 The generator writes and stages only `Formula/<formula>.rb` for the channel it
 converts, and `convert.yml` fails if a run modifies any other file under
 `Formula/`. To bump `hotshot`, follow the checklist in
-[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb);
+[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb);
 `.github/workflows/hotshot.yml` builds it from source and runs `brew test` on a
 macOS runner for PRs that touch it and weekly on `main`; a failed scheduled
 run opens (or updates) a "hotshot formula failing" issue that the next green
-scheduled run closes, the same way `convert.yml` reports its own schedule. The
-formula ships the CLI binary only; the double-clickable `Hotshot.app` bundle is still produced
-with upstream's `scripts/bundle.sh`.
+scheduled run closes, the same way `convert.yml` reports its own schedule. To
+bump `crux`, follow the checklist in
+[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb);
+`.github/workflows/crux.yml` builds it on macOS and Linux and runs `brew test`
+for PRs that touch it and weekly on `main`; a failed scheduled run opens (or
+updates) a "crux formula failing" issue that the next green scheduled run
+closes. The `hotshot` formula ships the CLI binary only; the double-clickable
+`Hotshot.app` bundle is still produced with upstream's `scripts/bundle.sh`.
 
 ## Platform reality
 
