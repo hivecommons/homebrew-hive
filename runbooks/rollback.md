@@ -132,5 +132,12 @@ copies keep working until upgraded.
    ```
 
 If the bad tag is upstream's fault, fix or re-tag upstream and bump forward
-using the checklist in [`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb).
+using the checklist in [`Formula/README.md`](../Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb).
 Record the incident with [postmortem-template.md](postmortem-template.md).
+
+The same procedure applies to `Formula/crux.rb`, the other hand-maintained
+formula: it is detected by the `crux formula` workflow (macOS and Linux) or
+`Tap CI`, reverted with a `revert-crux-<bad-tag>` branch, and reinstalled with
+`brew reinstall hivecommons/hive/crux`. Its `url` lines point at prebuilt
+release archives rather than a source tarball, so confirm all four restored
+URLs still return 200.
