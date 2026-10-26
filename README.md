@@ -77,7 +77,7 @@ and ownership is tracked per file in [`Formula/README.md`](Formula/README.md):
 The generator writes and stages only `Formula/<formula>.rb` for the channel it
 converts, and `convert.yml` fails if a run modifies any other file under
 `Formula/`. To bump `hotshot`, follow the checklist in
-[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb);
+[`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb);
 `.github/workflows/hotshot.yml` builds it from source and runs `brew test` on a
 macOS runner for PRs that touch it and weekly on `main`; a failed scheduled
 run opens (or updates) a "hotshot formula failing" issue that the next green
@@ -87,8 +87,8 @@ bump `crux`, follow the checklist in
 `.github/workflows/crux.yml` builds it on macOS and Linux and runs `brew test`
 for PRs that touch it and weekly on `main`; a failed scheduled run opens (or
 updates) a "crux formula failing" issue that the next green scheduled run
-closes. The formula ships the CLI binary only; the double-clickable `Hotshot.app` bundle is still produced
-with upstream's `scripts/bundle.sh`.
+closes. The `hotshot` formula ships the CLI binary only; the double-clickable
+`Hotshot.app` bundle is still produced with upstream's `scripts/bundle.sh`.
 
 ## Platform reality
 
