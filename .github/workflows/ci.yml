@@ -34,6 +34,8 @@ jobs:
           # hotshot are built and tested on macOS by hotshot.yml instead.
           if ls Formula/*.rb >/dev/null 2>&1; then
             brew tap hivecommons/hive "$PWD"
+            # Homebrew now refuses to load formulae from non-official taps until trusted.
+            brew trust hivecommons/hive 2>/dev/null || true
             ruby -c Formula/*.rb
             brew style Formula/*.rb
             for formula_path in Formula/*.rb; do
