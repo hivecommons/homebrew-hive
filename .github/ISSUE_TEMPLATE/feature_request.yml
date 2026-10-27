@@ -1,14 +1,18 @@
 name: Feature request
-description: Suggest an improvement to the contribute formula, the hive-contribute wrapper, or the release automation
+description: Suggest an improvement to a formula in this tap, the hive-contribute wrapper, or the release automation
 title: "feature: "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        `Formula/` is generated output, so changes land in `scripts/generate-formula.py`,
-        `scripts/contribute-wrapper.sh.in` or the conversion workflow. Requests for the contributor relay
-        itself belong in [hivecommons/hive](https://github.com/hivecommons/hive/issues).
+        `Formula/contribute*.rb` is generated output, so changes to it land in `scripts/generate-formula.py`,
+        `scripts/contribute-wrapper.sh.in` or the conversion workflow. `Formula/hotshot.rb` and
+        `Formula/crux.rb` are hand-maintained (see [`Formula/README.md`](https://github.com/hivecommons/homebrew-hive/blob/main/Formula/README.md)).
+        Requests for the contributor relay itself belong in [hivecommons/hive](https://github.com/hivecommons/hive/issues);
+        requests for the hotshot or crux programs belong in
+        [hivecommons/hotshot](https://github.com/hivecommons/hotshot/issues/new/choose) or
+        [hivecommons/hive](https://github.com/hivecommons/hive/issues/new/choose).
   - type: dropdown
     id: area
     attributes:
@@ -17,6 +21,7 @@ body:
         - Installation (formula, platforms, dependencies)
         - hive-contribute wrapper (runtimes, mounts, forwarded environment)
         - Release channels and conversion automation
+        - hotshot or crux formula
         - Documentation
         - Other
     validations:

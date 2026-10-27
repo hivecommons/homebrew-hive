@@ -6,6 +6,12 @@ contact_links:
   - name: Contributor relay problems
     url: https://github.com/hivecommons/hive/blob/v5/src/docs/contributor-relay.md
     about: The relay that hive-contribute runs is developed in hivecommons/hive. Check its docs and file relay bugs there.
+  - name: hotshot app bugs and features
+    url: https://github.com/hivecommons/hotshot/issues/new/choose
+    about: If hotshot installs but the app misbehaves, report it in hivecommons/hotshot. Use the bug form here for brew install/test failures.
+  - name: crux runtime bugs and features
+    url: https://github.com/hivecommons/hive/issues/new/choose
+    about: Crux's code is developed in hivecommons/hive. Report runtime problems there; use the bug form here for brew install/test failures.
   - name: Join our Discord
     url: https://hivecommons.dev/discord
     about: Ask setup, contributor, and community questions in the Hive Commons Discord.

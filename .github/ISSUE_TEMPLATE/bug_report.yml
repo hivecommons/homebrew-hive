@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem installing the contribute formula or running hive-contribute
+description: Report a problem installing a formula from this tap (contribute, hotshot or crux) or running hive-contribute
 title: "bug: "
 labels: ["bug"]
 body:
@@ -12,9 +12,22 @@ body:
         including logs and `env` output. For security vulnerabilities, follow
         [SECURITY.md](https://github.com/hivecommons/.github/blob/main/SECURITY.md) instead of filing an issue.
 
-        This repo owns the formula, the `hive-contribute` wrapper and the SIF conversion. Problems in the
+        This repo owns the formulae, the `hive-contribute` wrapper and the SIF conversion. Problems in the
         contributor relay itself (task handling, registration, backend CLIs) belong in
-        [hivecommons/hive](https://github.com/hivecommons/hive/issues).
+        [hivecommons/hive](https://github.com/hivecommons/hive/issues). If `hotshot` or `crux` installs
+        fine but the program misbehaves, report it upstream:
+        [hivecommons/hotshot](https://github.com/hivecommons/hotshot/issues/new/choose) for hotshot,
+        [hivecommons/hive](https://github.com/hivecommons/hive/issues/new/choose) for crux.
+  - type: dropdown
+    id: formula
+    attributes:
+      label: Formula
+      options:
+        - contribute (hive-contribute)
+        - hotshot
+        - crux
+    validations:
+      required: true
   - type: dropdown
     id: platform
     attributes:
@@ -45,7 +58,7 @@ body:
     id: runtime
     attributes:
       label: Runtime
-      description: The output of `hive-contribute --wrapper-print-runtime`, or the `HIVE_CONTRIBUTE_RUNTIME` value you set.
+      description: For contribute, the output of `hive-contribute --wrapper-print-runtime`, or the `HIVE_CONTRIBUTE_RUNTIME` value you set.
       options:
         - apptainer
         - docker
@@ -53,13 +66,14 @@ body:
         - lima
         - gvisor
         - none / not reached
+        - not applicable (hotshot or crux)
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Wrapper version
-      description: The output of `hive-contribute --wrapper-version` (version, channel and pinned image), or the formula version from `brew info hivecommons/hive/contribute`.
+      label: Version
+      description: For contribute, the output of `hive-contribute --wrapper-version` (version, channel and pinned image). Otherwise, the formula version from `brew info hivecommons/hive/<formula>`.
     validations:
       required: true
   - type: textarea
@@ -89,5 +103,5 @@ body:
     id: logs
     attributes:
       label: Output or logs
-      description: Relevant `brew` or `hive-contribute` output. Redact tokens and API keys first.
+      description: Relevant `brew`, `hive-contribute`, `hotshot` or `crux` output. Redact tokens and API keys first.
       render: shell
