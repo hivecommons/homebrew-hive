@@ -323,7 +323,7 @@ jobs:
           # Retire per-tag PRs from earlier runs of this channel; the branch
           # above now carries their content.
           gh pr list --state open --json number,headRefName \
-            --jq ".[] | select(.headRefName | startswith(\"generated/${FORMULA}-\")) | .number" |
+            --jq ".[] | select(.headRefName | test(\"^generated/${FORMULA}-[0-9a-f]{12}$\")) | .number" |
           while read -r stale; do
             [ "$stale" = "$existing" ] && continue
             gh pr close "$stale" --delete-branch \

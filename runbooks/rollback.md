@@ -66,7 +66,7 @@ New installs use the restored formula.
      -f channel=stable -f force=true
    ```
 
-3. Review and merge the generated PR (`generated/contribute-<digest12>`).
+3. Review and merge the generated PR (`generated/contribute`).
 
 Use Option A when the bad image is still `stable` upstream and you need the tap
 fixed first; fix upstream afterwards so the next six-hourly run does not
