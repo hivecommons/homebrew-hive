@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What does this PR change, and why? Name the formula(e) it affects: `contribute` (generated) or a hand-maintained formula such as `hotshot`. -->
+<!-- What does this PR change, and why? Name the formula(e) it affects: `contribute` (generated) or a hand-maintained formula (`hotshot`, `crux`). -->
 
 Fixes #<!-- issue number, if this PR resolves one -->
 
