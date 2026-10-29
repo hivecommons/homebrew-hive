@@ -14,7 +14,7 @@ See [Contributing](https://github.com/hivecommons/homebrew-hive#contributing) an
 
 - [ ] `Formula/contribute*.rb` is not edited by hand; generated-formula changes go in `scripts/generate-formula.py`, `scripts/contribute-wrapper.sh.in` or `.github/workflows/convert.yml`
 - [ ] Generator or wrapper changes pass `python3 -m unittest discover -s scripts -p 'test_*.py' -v`
-- [ ] Hand-maintained formula changes pass `brew style`, `brew audit --strict --new`, `brew install --build-from-source` and `brew test` on macOS
+- [ ] Hand-maintained formula changes pass the `brew style`, `brew audit`, `brew install` and `brew test` steps of that formula's checklist in `Formula/README.md` (`hotshot` on macOS; `crux` on macOS or Linux)
 - [ ] A new hand-maintained formula is added to the ownership table in `Formula/README.md`
 - [ ] This PR does not push to the generated `generated/contribute*` branches
 - [ ] Commits are signed off (`git commit -s`)
