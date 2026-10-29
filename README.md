@@ -260,10 +260,13 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
   `scripts/generate-formula.py`, `scripts/contribute-wrapper.sh.in`, or
   `.github/workflows/convert.yml` instead, and run the generator tests (see
   [Testing the generator](#testing-the-generator)) before opening a PR.
-- `Formula/hotshot.rb` (and any formula listed as hand-maintained in
-  `Formula/README.md`) is edited directly by PR; run `brew style`,
-  `brew audit --strict --new`, `brew install --build-from-source` and
-  `brew test` on macOS first.
+- `Formula/hotshot.rb`, `Formula/crux.rb` (and any formula listed as
+  hand-maintained in `Formula/README.md`) are edited directly by PR; run that
+  formula's `brew style`, `brew audit`, `brew install` and `brew test` steps
+  from its checklist in
+  [`Formula/README.md`](Formula/README.md#hand-maintained-formulae-hotshotrb-cruxrb)
+  first. `hotshot` is macOS-only, so validate it on macOS; `crux` ships
+  macOS and Linux binaries, so either OS works.
 - Sign off every commit (`git commit -s`) to satisfy the Developer Certificate
   of Origin check.
 - Generated formula PRs (the long-lived `generated/contribute` and
@@ -280,10 +283,11 @@ After either incident, record it with
 
 ## Installing before a generated release lands
 
-Use the from-source flow documented in the [hive README][hive] (`just
-contribute-hive`). It remains supported after this tap lands — the tap is an
-additional on-ramp, not a replacement.
+Use the from-source flow (`just contribute-hive`) documented in hive's
+[contributor relay guide][relay-from-source]. It remains supported after this
+tap lands — the tap is an additional on-ramp, not a replacement.
 
 [roadmap]: https://github.com/hivecommons/hive/blob/v5/docs/contribute-distribution-roadmap.md
 [hive]: https://github.com/hivecommons/hive
+[relay-from-source]: https://github.com/hivecommons/hive/blob/v5/src/docs/contributor-relay.md#from-source
 [i6635]: https://github.com/hivecommons/hive/issues/6635
