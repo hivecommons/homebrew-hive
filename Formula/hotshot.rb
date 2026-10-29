@@ -6,8 +6,8 @@
 class Hotshot < Formula
   desc "Screenshot-to-path menu-bar helper for AI coding terminals"
   homepage "https://github.com/hivecommons/hotshot"
-  url "https://github.com/hivecommons/hotshot/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "f36518aa39dc3007367ea9525c7b1be3ee5af2b47aa44e41720224126aaccebe"
+  url "https://github.com/hivecommons/hotshot/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "8500c3ac95b7d06e62d06a8d078a6b1e4e6d5ee6511ad37680dd8bc73bf2cef4"
   license "Apache-2.0"
 
   depends_on xcode: ["15.0", :build]
