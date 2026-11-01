@@ -470,6 +470,42 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(plan["runtime"], "apptainer")
         self.assertEqual(plan["runtime_available"], "yes")
 
+    def test_dry_run_runtime_available_probes_each_explicit_engine(self):
+        """runtime_available must track the engine binary the run path execs.
+
+        Each requested engine has its own probe: lima looks for limactl,
+        gvisor for a docker/podman host engine, docker and podman for
+        themselves. None of these arms is reached by the apptainer cases
+        above or by the formula's brew test, so pin both answers for each.
+        """
+        cases = [
+            ("lima", "limactl"),
+            ("docker", "docker"),
+            ("podman", "podman"),
+            ("gvisor", "docker"),
+            ("gvisor", "podman"),
+        ]
+        for requested, binary in cases:
+            with self.subTest(runtime=requested, binary=binary):
+                stub = self.bindir / binary
+                if stub.exists():
+                    stub.unlink()
+                proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": requested})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                plan, _ = self.parse_plan(proc.stdout)
+                self.assertEqual(plan["runtime"], requested)
+                self.assertEqual(plan["runtime_available"], "no")
+                self.assertFalse(self.stub_out.exists(), "dry run must not invoke the engine")
+
+                self.add_stub(binary)
+                proc = self.run_wrapper("--wrapper-dry-run", env={"HIVE_CONTRIBUTE_RUNTIME": requested})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                plan, _ = self.parse_plan(proc.stdout)
+                self.assertEqual(plan["runtime"], requested)
+                self.assertEqual(plan["runtime_available"], "yes")
+                self.assertFalse(self.stub_out.exists(), "dry run must not invoke the engine")
+                stub.unlink()
+
     def test_dry_run_matches_run_path_contract(self):
         """The plan must name what the real lifecycle actually uses."""
         self.add_instance_stubs()
