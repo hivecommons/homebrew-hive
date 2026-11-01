@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261101.004838.c106d469ea5d"
+  version "20261101.044315.ad20df836f7c"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c106d469ea5d/hive-contributor-arm64.sif"
-    sha256 "4e41b7782d90b0dc6f3a7fe1955d2da66d138de2bb829e9814b11c8c4d416ee6"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-ad20df836f7c/hive-contributor-arm64.sif"
+    sha256 "173110bc5bf640cd8dc65772275ec46629b2419501bde7e73aca63ee8f8eaea3"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c106d469ea5d/hive-contributor-amd64.sif"
-    sha256 "8edf17574101a005ef21ec7713ef6f7c4fc5a754960e55540168b10fbe8eb594"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-ad20df836f7c/hive-contributor-amd64.sif"
+    sha256 "d38ac844bf50634daff88a4701c0ba56ae8db33c3e14366f0929c4985d65e348"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261101.004838.c106d469ea5d"
+      WRAPPER_VERSION="20261101.044315.ad20df836f7c"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:c106d469ea5dc19290c0b41c4b9bcb4a66839bc7cabec0ff98c1caf53b6a4802"
-      IMAGE_DIGEST="sha256:c106d469ea5dc19290c0b41c4b9bcb4a66839bc7cabec0ff98c1caf53b6a4802"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:ad20df836f7c2367b40fd8d4d9e20542490d5e1f70bf00da872cf5618271de17"
+      IMAGE_DIGEST="sha256:ad20df836f7c2367b40fd8d4d9e20542490d5e1f70bf00da872cf5618271de17"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
       # Interactive Apptainer attaches to the tmux session the contributor
       # image creates inside the instance; the name is the image-side contract.
@@ -389,6 +389,14 @@ class Contribute < Formula
           runtime="$requested_runtime"
           resolve_runtime >/dev/null 2>&1 || available=no
         fi
+        # resolve_runtime does not probe Linux auto, yet the run path exits 127
+        # without apptainer, so check the resolved engine is really installed.
+        case "$runtime" in
+          apptainer) command -v apptainer >/dev/null 2>&1 || available=no ;;
+          lima) command -v limactl >/dev/null 2>&1 || available=no ;;
+          docker|podman) command -v "$runtime" >/dev/null 2>&1 || available=no ;;
+          gvisor) gvisor_engine >/dev/null 2>&1 || available=no ;;
+        esac
         mode=interactive
         [[ "${CONTRIBUTOR_MODE:-interactive}" != headless ]] || mode=headless
         case "$runtime" in
@@ -452,7 +460,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:c106d469ea5dc19290c0b41c4b9bcb4a66839bc7cabec0ff98c1caf53b6a4802
+        ghcr.io/hivecommons/hive-contributor@sha256:ad20df836f7c2367b40fd8d4d9e20542490d5e1f70bf00da872cf5618271de17
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -482,7 +490,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261101.004838.c106d469ea5d",
+      "hive-contribute 20261101.044315.ad20df836f7c",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
