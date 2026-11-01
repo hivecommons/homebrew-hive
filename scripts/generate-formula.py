@@ -115,7 +115,7 @@ class {klass} < Formula
       and the wrapper prints a warning. To restore the old mounts, set
         HIVE_CONTRIBUTE_MOUNT_SSH=1   (read-only ~/.ssh)
         HIVE_CONTRIBUTE_MOUNT_GH=1    (~/.config/gh)
-      ~/.gitconfig is still mounted read-only: a url.<base>.insteadOf rule that
+      ~/.gitconfig is still mounted read-only at /etc/gitconfig (system config): a url.<base>.insteadOf rule that
       rewrites https://github.com/ to SSH bypasses the HTTPS helper and needs
       HIVE_CONTRIBUTE_MOUNT_SSH=1.
     EOS

@@ -141,7 +141,7 @@ The wrapper forwards the inputs the contributor relay needs:
 - Backend choice: `AGENT_BACKEND`, `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, and
   `CONTRIBUTOR_MODE`.
 - GitHub auth: `GH_TOKEN` (or `GITHUB_TOKEN`, copied to `GH_TOKEN` when needed)
-  and read-only `~/.gitconfig` when present. Git inside the container uses HTTPS
+  and read-only `~/.gitconfig` (mounted at `/etc/gitconfig`, the system config) when present. Git inside the container uses HTTPS
   with the forwarded token through an env-configured credential helper
   (`GIT_CONFIG_*`); without a token, authenticated clones and pushes fail and
   the wrapper warns on stderr. `~/.ssh` and `~/.config/gh` are **not** mounted
