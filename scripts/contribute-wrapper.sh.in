@@ -364,6 +364,14 @@
           runtime="$requested_runtime"
           resolve_runtime >/dev/null 2>&1 || available=no
         fi
+        # resolve_runtime does not probe Linux auto, yet the run path exits 127
+        # without apptainer, so check the resolved engine is really installed.
+        case "$runtime" in
+          apptainer) command -v apptainer >/dev/null 2>&1 || available=no ;;
+          lima) command -v limactl >/dev/null 2>&1 || available=no ;;
+          docker|podman) command -v "$runtime" >/dev/null 2>&1 || available=no ;;
+          gvisor) gvisor_engine >/dev/null 2>&1 || available=no ;;
+        esac
         mode=interactive
         [[ "${CONTRIBUTOR_MODE:-interactive}" != headless ]] || mode=headless
         case "$runtime" in

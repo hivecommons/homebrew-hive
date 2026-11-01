@@ -453,6 +453,23 @@ class WrapperTests(unittest.TestCase):
         self.assertFalse((self.home / ".config" / "hive").exists())
         self.assertFalse((self.home / ".local" / "state" / "hive" / "contribute").exists())
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux auto-selects apptainer")
+    def test_dry_run_linux_auto_reports_unavailable_without_apptainer(self):
+        proc = self.run_wrapper("--wrapper-dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, _ = self.parse_plan(proc.stdout)
+        self.assertEqual(plan["runtime"], "apptainer")
+        self.assertEqual(plan["runtime_available"], "no")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux auto-selects apptainer")
+    def test_dry_run_linux_auto_reports_available_with_apptainer(self):
+        self.add_stub("apptainer")
+        proc = self.run_wrapper("--wrapper-dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan, _ = self.parse_plan(proc.stdout)
+        self.assertEqual(plan["runtime"], "apptainer")
+        self.assertEqual(plan["runtime_available"], "yes")
+
     def test_dry_run_matches_run_path_contract(self):
         """The plan must name what the real lifecycle actually uses."""
         self.add_instance_stubs()
