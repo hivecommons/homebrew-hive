@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261101.063042.4286bcb7e2fa"
+  version "20261101.080257.26b84b0f2305"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-4286bcb7e2fa/hive-contributor-arm64.sif"
-    sha256 "5bef419aa26162069e39dedd1c25a63dd42c70ee7c87aa59a673d77356bad318"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-26b84b0f2305/hive-contributor-arm64.sif"
+    sha256 "e4fd954df5b9dd08f5fc4e13a686a0c42547d75153285ce9270713d128b5f2a3"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-4286bcb7e2fa/hive-contributor-amd64.sif"
-    sha256 "3f893ef58acd07ceb07985f7e7565a51c7374393c1d9e58eb84993e02208e949"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-26b84b0f2305/hive-contributor-amd64.sif"
+    sha256 "fee989b79f1459ce314325a540ce0db396446d67b4fe526231905be98512de91"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261101.063042.4286bcb7e2fa"
+      WRAPPER_VERSION="20261101.080257.26b84b0f2305"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:4286bcb7e2faa2ec746d83a791a5d61b4e42b2504b7f2e5305307a5c2d962e64"
-      IMAGE_DIGEST="sha256:4286bcb7e2faa2ec746d83a791a5d61b4e42b2504b7f2e5305307a5c2d962e64"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:26b84b0f23053a03b275236e6f2c91c88e38bca73ecdd0c48e50a999931c7cde"
+      IMAGE_DIGEST="sha256:26b84b0f23053a03b275236e6f2c91c88e38bca73ecdd0c48e50a999931c7cde"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
       # Interactive Apptainer attaches to the tmux session the contributor
       # image creates inside the instance; the name is the image-side contract.
@@ -88,6 +88,8 @@ class Contribute < Formula
       state_dir="${HIVE_CONTRIBUTE_STATE_DIR:-$HOME/.local/state/hive/contribute}"
       container_workspace="/home/dev/workspace"
       container_config="/home/dev/.config/hive"
+      container_codex="/home/dev/.codex"
+      codex_home="${CODEX_HOME:-$HOME/.codex}"
       case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
 
       # The workspace is bound read-write. Binding $HOME itself, an ancestor
@@ -112,6 +114,12 @@ class Contribute < Formula
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
       export HIVE_CONTRIBUTOR_CONFIG_DIR="$container_config"
+      # CODEX_HOME is forwarded through the CODEX_* allow-list, but its host
+      # directory is bound at $container_codex, so point it there like the
+      # workspace and config paths above; unset stays unset.
+      if [[ -n "${CODEX_HOME:-}" ]]; then
+        export CODEX_HOME="$container_codex"
+      fi
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
         export GH_TOKEN="$GITHUB_TOKEN"
       fi
@@ -188,7 +196,7 @@ class Contribute < Formula
           add_existing_bind "$HOME/.claude" "/home/dev/.claude"
           add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
           add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
-          add_existing_bind "${CODEX_HOME:-$HOME/.codex}" "/home/dev/.codex"
+          add_existing_bind "$codex_home" "$container_codex"
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
@@ -291,7 +299,7 @@ class Contribute < Formula
         [[ -e "$HOME/.claude" ]] && args+=(-v "$HOME/.claude:/home/dev/.claude")
         [[ -e "$HOME/.claude.json" ]] && args+=(-v "$HOME/.claude.json:/home/dev/.claude.json")
         [[ -e "$HOME/.copilot" ]] && args+=(-v "$HOME/.copilot:/home/dev/.copilot")
-        [[ -e "${CODEX_HOME:-$HOME/.codex}" ]] && args+=(-v "${CODEX_HOME:-$HOME/.codex}:/home/dev/.codex")
+        [[ -e "$codex_home" ]] && args+=(-v "$codex_home:$container_codex")
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
@@ -460,7 +468,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:4286bcb7e2faa2ec746d83a791a5d61b4e42b2504b7f2e5305307a5c2d962e64
+        ghcr.io/hivecommons/hive-contributor@sha256:26b84b0f23053a03b275236e6f2c91c88e38bca73ecdd0c48e50a999931c7cde
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -490,7 +498,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261101.063042.4286bcb7e2fa",
+      "hive-contribute 20261101.080257.26b84b0f2305",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
