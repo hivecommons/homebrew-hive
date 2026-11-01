@@ -63,6 +63,8 @@
       state_dir="${HIVE_CONTRIBUTE_STATE_DIR:-$HOME/.local/state/hive/contribute}"
       container_workspace="/home/dev/workspace"
       container_config="/home/dev/.config/hive"
+      container_codex="/home/dev/.codex"
+      codex_home="${CODEX_HOME:-$HOME/.codex}"
       case "$workspace" in /*) ;; *) workspace="$PWD/$workspace" ;; esac
 
       # The workspace is bound read-write. Binding $HOME itself, an ancestor
@@ -87,6 +89,12 @@
 
       export HIVE_WORKSPACE_DIR="$container_workspace"
       export HIVE_CONTRIBUTOR_CONFIG_DIR="$container_config"
+      # CODEX_HOME is forwarded through the CODEX_* allow-list, but its host
+      # directory is bound at $container_codex, so point it there like the
+      # workspace and config paths above; unset stays unset.
+      if [[ -n "${CODEX_HOME:-}" ]]; then
+        export CODEX_HOME="$container_codex"
+      fi
       if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
         export GH_TOKEN="$GITHUB_TOKEN"
       fi
@@ -163,7 +171,7 @@
           add_existing_bind "$HOME/.claude" "/home/dev/.claude"
           add_existing_bind "$HOME/.claude.json" "/home/dev/.claude.json"
           add_existing_bind "$HOME/.copilot" "/home/dev/.copilot"
-          add_existing_bind "${CODEX_HOME:-$HOME/.codex}" "/home/dev/.codex"
+          add_existing_bind "$codex_home" "$container_codex"
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
@@ -266,7 +274,7 @@
         [[ -e "$HOME/.claude" ]] && args+=(-v "$HOME/.claude:/home/dev/.claude")
         [[ -e "$HOME/.claude.json" ]] && args+=(-v "$HOME/.claude.json:/home/dev/.claude.json")
         [[ -e "$HOME/.copilot" ]] && args+=(-v "$HOME/.copilot:/home/dev/.copilot")
-        [[ -e "${CODEX_HOME:-$HOME/.codex}" ]] && args+=(-v "${CODEX_HOME:-$HOME/.codex}:/home/dev/.codex")
+        [[ -e "$codex_home" ]] && args+=(-v "$codex_home:$container_codex")
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")

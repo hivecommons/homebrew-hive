@@ -1120,9 +1120,27 @@ class WrapperTests(unittest.TestCase):
                 self.add_stub(engine)
                 proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, "CODEX_HOME": str(custom)})
                 self.assertEqual(proc.returncode, 0, proc.stderr)
-                binds = self.mounts(self.stub_record()[0], flag)
+                argv, env = self.stub_record()
+                binds = self.mounts(argv, flag)
                 self.assertIn(f"{custom}:/home/dev/.codex", binds)
                 self.assertFalse(any(b.startswith(f"{self.home}/.codex:") for b in binds), binds)
+                # The override is forwarded through the CODEX_* allow-list, so
+                # inside the container it must name the bind target, not the
+                # host path (which does not exist there).
+                if engine == "apptainer":
+                    self.assertEqual(self.forwarded(argv, env, "CODEX_HOME"), "/home/dev/.codex")
+                else:
+                    self.assertIn("CODEX_HOME", [argv[i + 1] for i, a in enumerate(argv) if a == "-e"])
+                    self.assertEqual(env.get("CODEX_HOME"), "/home/dev/.codex")
+
+        # Without an override nothing is forwarded: the container keeps the
+        # codex default, which is where ~/.codex is bound.
+        self.add_stub("apptainer")
+        proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, env = self.stub_record()
+        self.assertIsNone(self.forwarded(argv, env, "CODEX_HOME"))
+        self.assertIn(f"{self.home}/.codex:/home/dev/.codex", self.mounts(argv, "--bind"))
 
         # An override pointing at a directory that does not exist is skipped,
         # and the default ~/.codex is not silently used in its place.
