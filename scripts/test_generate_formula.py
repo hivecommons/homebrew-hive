@@ -586,7 +586,8 @@ class WrapperTests(unittest.TestCase):
         binds = [argv[i + 1] for i, a in enumerate(argv) if a == "--bind"]
         self.assertIn(f"{self.tmp / 'workspace'}:/home/dev/workspace", binds)
         self.assertIn(f"{self.home}/.config/hive:/home/dev/.config/hive", binds)
-        self.assertIn(f"{self.home}/.gitconfig:/home/dev/.gitconfig:ro", binds)
+        self.assertIn(f"{self.home}/.gitconfig:/etc/gitconfig:ro", binds)
+        self.assertFalse(any(":/home/dev/.gitconfig" in b for b in binds), binds)
         self.assertFalse(any(b.startswith(f"{self.home}/.config/gh:") for b in binds), "gh dir is opt-in")
         self.assertFalse(any(b.startswith(f"{self.home}/.ssh:") for b in binds), "ssh dir is opt-in")
         self.assertEqual(self.forwarded(argv, env, "GIT_CONFIG_COUNT"), "1")
@@ -1146,6 +1147,17 @@ class WrapperTests(unittest.TestCase):
                 # Only ~/.gitconfig and the opt-in ~/.ssh are read-only; backend
                 # CLIs write refresh tokens back to their directories.
                 self.assertFalse(any(b.endswith(":ro") for b in binds), binds)
+
+    def test_gitconfig_mounts_at_system_path_not_home(self):
+        (self.home / ".gitconfig").write_text("[user]\n")
+        for engine, flag in (("apptainer", "--bind"), ("docker", "-v")):
+            with self.subTest(engine=engine):
+                self.add_stub(engine)
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                binds = self.mounts(self.stub_record()[0], flag)
+                self.assertIn(f"{self.home}/.gitconfig:/etc/gitconfig:ro", binds)
+                self.assertFalse(any(":/home/dev/.gitconfig" in b for b in binds), binds)
 
     def test_codex_home_override_replaces_default_codex_bind(self):
         custom = self.tmp / "codex-profile"

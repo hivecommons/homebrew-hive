@@ -175,7 +175,9 @@
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
-          add_existing_bind "$HOME/.gitconfig" "/home/dev/.gitconfig" ro
+          # The entrypoint rewrites /home/dev/.gitconfig via `git config --global`; rename
+          # over a bind-mounted file fails (EBUSY), so expose the host file as system config.
+          add_existing_bind "$HOME/.gitconfig" "/etc/gitconfig" ro
           if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 ]]; then
             add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
           fi
@@ -278,7 +280,9 @@
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
-        [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
+        # The entrypoint rewrites /home/dev/.gitconfig via `git config --global`; rename
+        # over a bind-mounted file fails (EBUSY), so expose the host file as system config.
+        [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/etc/gitconfig:ro")
         if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 && -e "$HOME/.config/gh" ]]; then
           args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
         fi
