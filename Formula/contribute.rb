@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261101.182408.231d9a626d19"
+  version "20261101.214356.b59f1397023d"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-231d9a626d19/hive-contributor-arm64.sif"
-    sha256 "aaa4e246dac7e02ed7f93222ff4652986c931f9d560a50ada1776de17c1a7a82"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-b59f1397023d/hive-contributor-arm64.sif"
+    sha256 "f817f6f4ac930acbcc2f0dac891d32d66de94a52ae87d6b9011fd61c04640f65"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-231d9a626d19/hive-contributor-amd64.sif"
-    sha256 "c4ff727ad1f7794076e3baa1e975e48d76b0e76dae621d883a924da171b2553b"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-b59f1397023d/hive-contributor-amd64.sif"
+    sha256 "255fa6ac33b7c40579d8777af866d16421bd6311c9eca8df04bfca465d04c4bb"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261101.182408.231d9a626d19"
+      WRAPPER_VERSION="20261101.214356.b59f1397023d"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:231d9a626d190cb96b2f361879d5690187110a7f51e3243e999eac13b73e4a50"
-      IMAGE_DIGEST="sha256:231d9a626d190cb96b2f361879d5690187110a7f51e3243e999eac13b73e4a50"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:b59f1397023d5eeddb1faaf088d8aee1a1033e676ad992be6721ca8e5087c373"
+      IMAGE_DIGEST="sha256:b59f1397023d5eeddb1faaf088d8aee1a1033e676ad992be6721ca8e5087c373"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
       # Interactive Apptainer attaches to the tmux session the contributor
       # image creates inside the instance; the name is the image-side contract.
@@ -200,7 +200,9 @@ class Contribute < Formula
           add_existing_bind "$HOME/.config/goose" "/home/dev/.config/goose"
           add_existing_bind "$HOME/.config/muse" "/home/dev/.config/muse"
           add_existing_bind "$HOME/.bob" "/home/dev/.bob"
-          add_existing_bind "$HOME/.gitconfig" "/home/dev/.gitconfig" ro
+          # The entrypoint rewrites /home/dev/.gitconfig via `git config --global`; rename
+          # over a bind-mounted file fails (EBUSY), so expose the host file as system config.
+          add_existing_bind "$HOME/.gitconfig" "/etc/gitconfig" ro
           if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 ]]; then
             add_existing_bind "$HOME/.config/gh" "/home/dev/.config/gh"
           fi
@@ -303,7 +305,9 @@ class Contribute < Formula
         [[ -e "$HOME/.config/goose" ]] && args+=(-v "$HOME/.config/goose:/home/dev/.config/goose")
         [[ -e "$HOME/.config/muse" ]] && args+=(-v "$HOME/.config/muse:/home/dev/.config/muse")
         [[ -e "$HOME/.bob" ]] && args+=(-v "$HOME/.bob:/home/dev/.bob")
-        [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
+        # The entrypoint rewrites /home/dev/.gitconfig via `git config --global`; rename
+        # over a bind-mounted file fails (EBUSY), so expose the host file as system config.
+        [[ -e "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/etc/gitconfig:ro")
         if [[ "${HIVE_CONTRIBUTE_MOUNT_GH:-}" == 1 && -e "$HOME/.config/gh" ]]; then
           args+=(-v "$HOME/.config/gh:/home/dev/.config/gh")
         fi
@@ -468,7 +472,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:231d9a626d190cb96b2f361879d5690187110a7f51e3243e999eac13b73e4a50
+        ghcr.io/hivecommons/hive-contributor@sha256:b59f1397023d5eeddb1faaf088d8aee1a1033e676ad992be6721ca8e5087c373
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -490,7 +494,7 @@ class Contribute < Formula
       and the wrapper prints a warning. To restore the old mounts, set
         HIVE_CONTRIBUTE_MOUNT_SSH=1   (read-only ~/.ssh)
         HIVE_CONTRIBUTE_MOUNT_GH=1    (~/.config/gh)
-      ~/.gitconfig is still mounted read-only: a url.<base>.insteadOf rule that
+      ~/.gitconfig is still mounted read-only at /etc/gitconfig (system config): a url.<base>.insteadOf rule that
       rewrites https://github.com/ to SSH bypasses the HTTPS helper and needs
       HIVE_CONTRIBUTE_MOUNT_SSH=1.
     EOS
@@ -498,7 +502,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261101.182408.231d9a626d19",
+      "hive-contribute 20261101.214356.b59f1397023d",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
