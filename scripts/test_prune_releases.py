@@ -33,8 +33,9 @@ class PlanTests(unittest.TestCase):
     def test_keeps_newest_n_and_young_releases(self):
         releases = [stable(i, 20 + i) for i in range(5)] + [stable(100, 1)]
         result = prune.plan(releases, set(), keep=2, min_age_days=14, now=NOW)["stable"]
-        self.assertEqual(len(result["kept"]), 3)
-        self.assertEqual(set(result["candidates"]), {f"contribute-{i:012x}" for i in (2, 3, 4)})
+        # The young release is the newest, so it occupies the first --keep slot.
+        self.assertEqual(result["kept"], ["contribute-000000000064", "contribute-000000000000"])
+        self.assertEqual(set(result["candidates"]), {f"contribute-{i:012x}" for i in (1, 2, 3, 4)})
 
     def test_young_releases_survive_even_beyond_count(self):
         releases = [stable(i, 1) for i in range(5)]
