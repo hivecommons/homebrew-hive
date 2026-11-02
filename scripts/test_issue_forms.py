@@ -149,6 +149,12 @@ class IssueChooserConfigTests(unittest.TestCase):
         urls = [link["url"] for link in self.config["contact_links"]]
         self.assertIn("https://github.com/hivecommons/.github/blob/main/SECURITY.md", urls)
 
+    def test_community_contact_links_match_hive(self):
+        # Same Discord and Twitch targets as the hive README's Community section.
+        urls = [link["url"] for link in self.config["contact_links"]]
+        self.assertIn("https://hivecommons.dev/discord", urls)
+        self.assertIn("https://www.twitch.tv/hivecommons", urls)
+
 
 @unittest.skipUnless(yaml, "PyYAML not installed")
 class BugReportContractTests(unittest.TestCase):

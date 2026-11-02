@@ -273,6 +273,12 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
   `generated/contribute-candidate` branches, force-pushed by each run) are
   opened by the conversion workflow; review them, do not push to them.
 
+## Community
+
+Ask setup and contributor questions on [Discord](https://hivecommons.dev/discord),
+watch the hive live on [Twitch](https://www.twitch.tv/hivecommons), or start a
+thread in [Hive's GitHub Discussions](https://github.com/hivecommons/hive/discussions).
+
 ## Rollback
 
 If a generated formula installs a bad image, follow
