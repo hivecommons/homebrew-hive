@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Dry-run inventory of generated contribute releases eligible for pruning.
+"""Inventory, and optionally prune, generated contribute releases.
 
 Reports which `contribute-<digest12>` / `contribute-candidate-<digest12>`
-releases fall outside the retention policy. It never deletes anything.
+releases fall outside the retention policy. It is a dry run unless --delete
+is passed, in which case exactly the reported candidates are deleted together
+with their tags.
 
 Retention, applied per channel: a release is kept if it is among the newest
 --keep releases, is younger than --min-age-days, or its tag is protected
@@ -120,25 +122,43 @@ def plan(releases: list[dict], protected: set[str], keep: int, min_age_days: int
     return result
 
 
+def delete_release(repo: str, tag: str) -> None:
+    proc = subprocess.run(
+        ["gh", "release", "delete", tag, "--repo", repo, "--yes", "--cleanup-tag"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise ApiError(f"gh release delete {tag} failed: {proc.stderr.strip()}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", required=True)
     parser.add_argument("--keep", type=int, default=30)
     parser.add_argument("--min-age-days", type=int, default=14)
     parser.add_argument("--protect-tag", action="append", default=[])
+    parser.add_argument("--delete", action="store_true", help="delete the candidates instead of only listing them")
     args = parser.parse_args()
     try:
         releases = fetch_releases(args.repo)
         protected = protected_tags(args.repo, args.protect_tag)
         report = plan(releases, protected, args.keep, args.min_age_days, datetime.now(timezone.utc))
+        if args.delete:
+            for data in report.values():
+                for tag in data["candidates"]:
+                    delete_release(args.repo, tag)
+                    print(f"deleted {tag}")
     except (ApiError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     for channel, data in report.items():
         print(f"{channel}: keep={len(data['kept'])} prune-candidates={len(data['candidates'])}")
-        for tag in data["candidates"]:
-            print(f"  would delete {tag}")
-    print("dry run: nothing was deleted")
+        if not args.delete:
+            for tag in data["candidates"]:
+                print(f"  would delete {tag}")
+    if not args.delete:
+        print("dry run: nothing was deleted")
     return 0
 
 
