@@ -143,5 +143,40 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn("would delete", " ".join(str(c) for c in out.call_args_list))
 
 
+class DeleteTests(unittest.TestCase):
+    def run_main(self, releases, *flags):
+        argv = ["prune", "--repo", "o/r", "--keep", "1", "--min-age-days", "14", *flags]
+        with mock.patch.object(prune, "fetch_releases", return_value=releases), \
+                mock.patch.object(prune, "protected_tags", return_value={"contribute-eeeeeeeeeeee"}), \
+                mock.patch.object(prune, "delete_release") as delete, \
+                mock.patch("sys.argv", argv), \
+                mock.patch("builtins.print"):
+            code = prune.main()
+        return code, [c.args[1] for c in delete.call_args_list]
+
+    def test_dry_run_deletes_nothing(self):
+        releases = [rel("contribute-aaaaaaaaaaaa", 40), rel("contribute-bbbbbbbbbbbb", 50)]
+        self.assertEqual(self.run_main(releases), (0, []))
+
+    def test_delete_removes_only_candidates(self):
+        releases = [
+            rel("contribute-aaaaaaaaaaaa", 40),
+            rel("contribute-bbbbbbbbbbbb", 50),
+            rel("contribute-eeeeeeeeeeee", 60),
+            rel("contribute-candidate-cccccccccccc", 40),
+            rel("crux-dddddddddddd", 90),
+        ]
+        self.assertEqual(self.run_main(releases, "--delete"), (0, ["contribute-bbbbbbbbbbbb"]))
+
+    def test_delete_failure_exits_nonzero(self):
+        releases = [rel("contribute-aaaaaaaaaaaa", 40), rel("contribute-bbbbbbbbbbbb", 50)]
+        with mock.patch.object(prune, "fetch_releases", return_value=releases), \
+                mock.patch.object(prune, "protected_tags", return_value=set()), \
+                mock.patch.object(prune, "delete_release", side_effect=prune.ApiError("boom")), \
+                mock.patch("sys.argv", ["prune", "--repo", "o/r", "--keep", "1", "--delete"]), \
+                mock.patch("builtins.print"):
+            self.assertEqual(prune.main(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

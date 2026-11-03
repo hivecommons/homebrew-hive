@@ -72,6 +72,23 @@ Use Option A when the bad image is still `stable` upstream and you need the tap
 fixed first; fix upstream afterwards so the next six-hourly run does not
 re-introduce the bad digest.
 
+## Release retention and pruning
+
+`convert.yml` runs `scripts/prune-releases.py` after each publish. It keeps the
+newest 30 generated releases per channel, everything published in the last 14
+days, and every tag referenced by the formula on `main` or the generated
+branches. By default it only reports what it would delete. Deletion happens
+only when the repository variable `CONTRIBUTE_RELEASE_PRUNE` is `true`; the
+window is tunable with `CONTRIBUTE_RELEASE_KEEP` and
+`CONTRIBUTE_RELEASE_MIN_AGE_DAYS`. Set `CONTRIBUTE_RELEASE_PRUNE` back to
+anything else to stop pruning.
+
+A pruned release and its tag are gone: Option A cannot restore a formula that
+points at one, and old formula URLs return 404. To roll back to a pruned
+digest, use Option B after upstream points the channel at that digest; the
+force run rebuilds the release from the image, which must still exist in GHCR.
+Prefer reverting to a digest still within the retention window.
+
 ## Prevent re-introduction
 
 If upstream `stable` still points at the bad digest, any later conversion for

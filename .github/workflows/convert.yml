@@ -330,6 +330,24 @@ jobs:
               --comment "Superseded by #${existing}: the ${CHANNEL} formula now tracks a single branch (\`${branch}\`)."
           done
 
+      - name: Prune old generated releases
+        # Dry run unless the repository variable CONTRIBUTE_RELEASE_PRUNE is
+        # exactly "true"; a failure here never blocks publication.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRUNE: ${{ vars.CONTRIBUTE_RELEASE_PRUNE }}
+          KEEP: ${{ vars.CONTRIBUTE_RELEASE_KEEP || '30' }}
+          MIN_AGE_DAYS: ${{ vars.CONTRIBUTE_RELEASE_MIN_AGE_DAYS || '14' }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --keep "$KEEP" --min-age-days "$MIN_AGE_DAYS" --protect-tag "$TAG")
+          if [ "$PRUNE" = "true" ]; then
+            args+=(--delete)
+          fi
+          ./scripts/prune-releases.py "${args[@]}"
+
       - name: Release held Tap CI run on the generated PR
         if: steps.commit.outputs.head_sha != ''
         env:
