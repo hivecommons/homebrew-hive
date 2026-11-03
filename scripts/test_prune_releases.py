@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -141,6 +142,42 @@ class ApiTests(unittest.TestCase):
                 mock.patch("builtins.print") as out:
             self.assertEqual(prune.main(), 1)
             self.assertNotIn("would delete", " ".join(str(c) for c in out.call_args_list))
+
+
+class GhSubprocessTests(unittest.TestCase):
+    """The two gh wrappers are the only code that touches the network or deletes anything."""
+
+    def completed(self, code: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(args=[], returncode=code, stdout=stdout, stderr=stderr)
+
+    def test_gh_api_passes_extra_flags_before_path_and_returns_stdout(self):
+        with mock.patch.object(prune.subprocess, "run", return_value=self.completed(0, stdout="[]")) as run:
+            self.assertEqual(prune.gh_api("repos/o/r/releases", "--paginate", "--slurp"), "[]")
+        self.assertEqual(run.call_args.args[0], ["gh", "api", "--paginate", "--slurp", "repos/o/r/releases"])
+        self.assertTrue(run.call_args.kwargs.get("capture_output"))
+
+    def test_gh_api_failure_raises_with_stderr(self):
+        with mock.patch.object(prune.subprocess, "run", return_value=self.completed(1, stderr="HTTP 404: Not Found\n")):
+            with self.assertRaises(prune.ApiError) as ctx:
+                prune.gh_api("repos/o/r/contents/x")
+        self.assertIn("repos/o/r/contents/x", str(ctx.exception))
+        # fetch_formula_tags keys its 404 tolerance off this text, so it must survive the wrap.
+        self.assertIn("404", str(ctx.exception))
+
+    def test_delete_release_removes_tag_too_and_never_prompts(self):
+        with mock.patch.object(prune.subprocess, "run", return_value=self.completed(0)) as run:
+            prune.delete_release("o/r", "contribute-aaaaaaaaaaaa")
+        self.assertEqual(
+            run.call_args.args[0],
+            ["gh", "release", "delete", "contribute-aaaaaaaaaaaa", "--repo", "o/r", "--yes", "--cleanup-tag"],
+        )
+
+    def test_delete_release_failure_raises_with_tag_and_stderr(self):
+        with mock.patch.object(prune.subprocess, "run", return_value=self.completed(1, stderr="release not found")):
+            with self.assertRaises(prune.ApiError) as ctx:
+                prune.delete_release("o/r", "contribute-aaaaaaaaaaaa")
+        self.assertIn("contribute-aaaaaaaaaaaa", str(ctx.exception))
+        self.assertIn("release not found", str(ctx.exception))
 
 
 class DeleteTests(unittest.TestCase):
