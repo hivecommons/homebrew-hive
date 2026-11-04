@@ -51,7 +51,7 @@ class Crux < Formula
     assert_match version.to_s, shell_output("#{bin}/crux --version")
     sock = testpath/"s.sock"
     log = testpath/"serve.log"
-    pid = spawn bin/"crux", "serve", "--socket", sock, out: log, err: [:child, :out]
+    pid = spawn bin/"crux", "serve", "--socket", sock, out: log.to_s, err: [:child, :out]
     begin
       50.times do
         break if sock.exist?
