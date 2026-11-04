@@ -50,16 +50,22 @@ class Crux < Formula
   test do
     assert_match version.to_s, shell_output("#{bin}/crux --version")
     sock = testpath/"s.sock"
-    pid = spawn bin/"crux", "serve", "--socket", sock
+    log = testpath/"serve.log"
+    pid = spawn bin/"crux", "serve", "--socket", sock, out: log, err: [:child, :out]
     begin
       50.times do
         break if sock.exist?
 
         sleep 0.2
       end
+      assert_predicate sock, :exist?, "crux serve did not create #{sock}:\n#{log.read}"
       assert_match "NAME", shell_output("#{bin}/crux --server #{sock} ps")
     ensure
-      Process.kill("INT", pid)
+      begin
+        Process.kill("INT", pid)
+      rescue Errno::ESRCH
+        # The server may have exited before creating its socket.
+      end
       Process.wait(pid)
     end
   end
