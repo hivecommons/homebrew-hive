@@ -12,23 +12,23 @@ class Crux < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/hivecommons/crux/releases/download/v0.2.0/crux_0.2.0_darwin_arm64.tar.gz"
-      sha256 "0c4bb10b929c0c0bad7d1cf9e00757663df20817e667fc8f1c64ce23290ae01e"
+      url "https://github.com/hivecommons/crux/releases/download/v0.3.0/crux_0.3.0_darwin_arm64.tar.gz"
+      sha256 "459cf8ca44401fefc7676e2cd873656dcebc200d678d4de3a3ca6a31a7847e90"
     end
     on_intel do
-      url "https://github.com/hivecommons/crux/releases/download/v0.2.0/crux_0.2.0_darwin_amd64.tar.gz"
-      sha256 "1919e2544319bdb5929186d0431be715b49b455318591500cac2836535977425"
+      url "https://github.com/hivecommons/crux/releases/download/v0.3.0/crux_0.3.0_darwin_amd64.tar.gz"
+      sha256 "37f16858770731e27fc8a2eecf68cacd40c93a0b23cba470a1dcfa8071ba10b9"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/hivecommons/crux/releases/download/v0.2.0/crux_0.2.0_linux_arm64.tar.gz"
-      sha256 "2a2d784bf649a04f61fbaea5342531ba2f747fc615a7cc863ad68b2942381226"
+      url "https://github.com/hivecommons/crux/releases/download/v0.3.0/crux_0.3.0_linux_arm64.tar.gz"
+      sha256 "560a7105facebf69662e3e9ff6c1651ea39b8dddb753b229f53d19eb22c0dd42"
     end
     on_intel do
-      url "https://github.com/hivecommons/crux/releases/download/v0.2.0/crux_0.2.0_linux_amd64.tar.gz"
-      sha256 "c8e03218f51dccd6396f04011af81e137614e9b727a21c82d68c4fdb435b0d16"
+      url "https://github.com/hivecommons/crux/releases/download/v0.3.0/crux_0.3.0_linux_amd64.tar.gz"
+      sha256 "ea5e6651f626f6b962d2158fd0f188f0a10469c5ae8988349172d864acef4c6a"
     end
   end
 
