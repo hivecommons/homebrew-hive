@@ -58,7 +58,7 @@ class Crux < Formula
 
         sleep 0.2
       end
-      assert_predicate sock, :exist?, "crux serve did not create #{sock}:\n#{log.read}"
+      assert_path_exists sock, "crux serve did not create #{sock}:\n#{log.read}"
       assert_match "NAME", shell_output("#{bin}/crux --server #{sock} ps")
     ensure
       begin
