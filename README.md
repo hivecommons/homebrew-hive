@@ -113,8 +113,9 @@ closes. The `hotshot` formula ships the CLI binary only; the double-clickable
 - **macOS:** Apptainer is not native; it needs a Linux VM. Lima has an
   Apptainer template (`limactl create --name=apptainer --mount-writable
   template://apptainer`).
-  The wrapper defaults to Docker or Podman if available and supports
-  `HIVE_CONTRIBUTE_RUNTIME=lima` for operators who have created a Lima
+  The wrapper defaults to Docker or Podman if available. Its Docker/Podman
+  path (including gVisor) uses `--cap-drop ALL --security-opt no-new-privileges`.
+  It also supports `HIVE_CONTRIBUTE_RUNTIME=lima` for operators who have created a Lima
   Apptainer VM. Interactive mode attaches via a named instance inside the VM
   and stops it on exit, just like Linux; use `CONTRIBUTOR_MODE=headless` for
   non-TTY use. Run manual attach commands inside `limactl shell apptainer`.
@@ -129,6 +130,8 @@ closes. The `hotshot` formula ships the CLI binary only; the double-clickable
   otherwise the workspace and state binds are read-only inside the VM.
 - **Windows:** use WSL2 and the Linux path (`brew` on Linux + Apptainer), or run
   Docker/Podman manually with the pinned image digest from the formula caveats.
+  For the same hardening as the wrapper, include
+  `--cap-drop ALL --security-opt no-new-privileges` in the manual run.
 - **KVM/gVisor:** the earlier roadmap wording overstated this. Apptainer's
   normal SIF runtime does not auto-detect KVM or switch to gVisor. gVisor is
   available only through an OCI runtime such as Docker/Podman configured with
