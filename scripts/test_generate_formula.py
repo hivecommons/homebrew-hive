@@ -1060,6 +1060,24 @@ class WrapperTests(unittest.TestCase):
         argv, _ = self.stub_record()
         self.assertEqual(argv[-3:], [self.args.image_ref, "relay", "--flag"])
 
+    def test_docker_like_engines_drop_capabilities_and_forbid_privilege_gain(self):
+        """Every docker-like path hands the engine cap-drop ALL and
+        no-new-privileges, as hive's contributor compose does for this image."""
+        for runtime, engine in (("docker", "docker"), ("podman", "podman"), ("gvisor", "docker")):
+            with self.subTest(runtime=runtime):
+                self.add_stub(engine)
+                proc = self.run_wrapper("relay", env={"HIVE_CONTRIBUTE_RUNTIME": runtime})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv, _ = self.stub_record()
+                image_at = argv.index(self.args.image_ref)
+                engine_flags = argv[:image_at]
+                cap = engine_flags.index("--cap-drop")
+                self.assertEqual(engine_flags[cap + 1], "ALL")
+                sec = engine_flags.index("--security-opt")
+                self.assertEqual(engine_flags[sec + 1], "no-new-privileges")
+                self.assertNotIn("--privileged", engine_flags)
+                self.assertNotIn("--cap-add", engine_flags)
+
     def test_gvisor_runtime_uses_docker_with_runsc(self):
         self.add_stub("docker")
         proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "gvisor"})
