@@ -263,6 +263,12 @@
         shift
         local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
         [[ -t 0 && -t 1 ]] && args+=(-t)
+        # The image runs the relay as the unprivileged dev user and carries no
+        # sudo, yet the engine's default capability bounding set plus the base
+        # image's setuid binaries would still let agent-run code regain root
+        # inside the container. Match the apptainer path's --containall and
+        # hive's own contributor compose (cap_drop ALL, no-new-privileges).
+        args+=(--cap-drop ALL --security-opt no-new-privileges)
         if [[ "${HIVE_CONTRIBUTE_RUNTIME:-}" == "gvisor" ]]; then
           args+=(--runtime=runsc)
         fi
