@@ -7,6 +7,11 @@ brew install hivecommons/hive/contribute
 hive-contribute
 ```
 
+Installing the formula does not register you with a hive. Pick a hive on the
+[Hive Hub][hub], open its `/contribute` page, and follow the
+[Homebrew steps in hive's contributor relay guide][relay-homebrew] to register
+and start the relay.
+
 It also carries hand-maintained formulae for other hivecommons CLIs; today
 that is [hotshot](https://github.com/hivecommons/hotshot), the macOS
 screenshot-to-path menu-bar helper for AI coding terminals:
@@ -287,13 +292,16 @@ reaching the tap, follow [`runbooks/convert-stalled.md`](runbooks/convert-stalle
 After either incident, record it with
 [`runbooks/postmortem-template.md`](runbooks/postmortem-template.md).
 
-## Installing before a generated release lands
+## Installing from source
 
-Use the from-source flow (`just contribute-hive`) documented in hive's
-[contributor relay guide][relay-from-source]. It remains supported after this
-tap lands — the tap is an additional on-ramp, not a replacement.
+To run the relay from a `hivecommons/hive` checkout instead, use the
+from-source flow (`just contribute-hive`) documented in hive's
+[contributor relay guide][relay-from-source]. The tap is an additional
+on-ramp, not a replacement.
 
 [roadmap]: https://github.com/hivecommons/hive/blob/v5/docs/contribute-distribution-roadmap.md
 [hive]: https://github.com/hivecommons/hive
 [relay-from-source]: https://github.com/hivecommons/hive/blob/v5/src/docs/contributor-relay.md#from-source
+[relay-homebrew]: https://github.com/hivecommons/hive/blob/v5/src/docs/contributor-relay.md#homebrew
+[hub]: https://hive.hivecommons.dev
 [i6635]: https://github.com/hivecommons/hive/issues/6635
