@@ -5,15 +5,15 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  version "20261106.155015.800d1db0014d"
+  version "20261106.162216.d57a06cc5fef"
   license "Apache-2.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-800d1db0014d/hive-contributor-arm64.sif"
-    sha256 "4641c1128bee4d67601cb093744fed16177229725244d2746b8fb6bbaebf6921"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d57a06cc5fef/hive-contributor-arm64.sif"
+    sha256 "27078d6cefd8c0e5d364147e9b68f365286cf144effba5b54c7c6987ebba3113"
   else
-    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-800d1db0014d/hive-contributor-amd64.sif"
-    sha256 "70ececd43888683e85edc735ec3ca2c42063403457c4088c2b07a1ed1ef0bf22"
+    url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-d57a06cc5fef/hive-contributor-amd64.sif"
+    sha256 "5ebbfa2d0c1bb04a6e39fd3e2d7c7ca6e4ea58e2e9e434c80a02cba3e841d94c"
   end
 
   on_linux do
@@ -26,10 +26,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261106.155015.800d1db0014d"
+      WRAPPER_VERSION="20261106.162216.d57a06cc5fef"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:800d1db0014d307acc214dcb3fc11cc8181f55f39f9457365e04d78e1efec0cd"
-      IMAGE_DIGEST="sha256:800d1db0014d307acc214dcb3fc11cc8181f55f39f9457365e04d78e1efec0cd"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:d57a06cc5fef49c76acabad3811c143d8e04cb452e3c7c36d4d8b86d460c0dd1"
+      IMAGE_DIGEST="sha256:d57a06cc5fef49c76acabad3811c143d8e04cb452e3c7c36d4d8b86d460c0dd1"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
       # Interactive Apptainer attaches to the tmux session the contributor
       # image creates inside the instance; the name is the image-side contract.
@@ -286,7 +286,8 @@ class Contribute < Formula
       docker_like_run() {
         local engine="$1"
         shift
-        local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
+        local container_name="${HIVE_CONTAINER_NAME:-hive-contributor}"
+        local -a args=(run --rm -i --name "$container_name")
         [[ -t 0 && -t 1 ]] && args+=(-t)
         # The image runs the relay as the unprivileged dev user and carries no
         # sudo, yet the engine's default capability bounding set plus the base
@@ -301,7 +302,7 @@ class Contribute < Formula
         args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
         # The relay keys its container-vs-local mode and attach hint on this,
         # so relay the resolved default as the apptainer path does.
-        args+=(-e "HIVE_CONTAINER_NAME=${HIVE_CONTAINER_NAME:-hive-contributor}")
+        args+=(-e "HIVE_CONTAINER_NAME=$container_name")
         while IFS= read -r kv; do args+=(-e "$kv"); done < <(git_https_env)
         args+=(-v "$workspace:$container_workspace")
         args+=(-v "$config_dir:$container_config")
@@ -481,7 +482,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:800d1db0014d307acc214dcb3fc11cc8181f55f39f9457365e04d78e1efec0cd
+        ghcr.io/hivecommons/hive-contributor@sha256:d57a06cc5fef49c76acabad3811c143d8e04cb452e3c7c36d4d8b86d460c0dd1
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -511,7 +512,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261106.155015.800d1db0014d",
+      "hive-contribute 20261106.162216.d57a06cc5fef",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
