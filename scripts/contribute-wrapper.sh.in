@@ -261,7 +261,8 @@
       docker_like_run() {
         local engine="$1"
         shift
-        local -a args=(run --rm -i --name "${HIVE_CONTAINER_NAME:-hive-contributor}")
+        local container_name="${HIVE_CONTAINER_NAME:-hive-contributor}"
+        local -a args=(run --rm -i --name "$container_name")
         [[ -t 0 && -t 1 ]] && args+=(-t)
         # The image runs the relay as the unprivileged dev user and carries no
         # sudo, yet the engine's default capability bounding set plus the base
@@ -276,7 +277,7 @@
         args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
         # The relay keys its container-vs-local mode and attach hint on this,
         # so relay the resolved default as the apptainer path does.
-        args+=(-e "HIVE_CONTAINER_NAME=${HIVE_CONTAINER_NAME:-hive-contributor}")
+        args+=(-e "HIVE_CONTAINER_NAME=$container_name")
         while IFS= read -r kv; do args+=(-e "$kv"); done < <(git_https_env)
         args+=(-v "$workspace:$container_workspace")
         args+=(-v "$config_dir:$container_config")
