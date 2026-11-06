@@ -274,6 +274,9 @@
         fi
         while IFS= read -r name; do args+=(-e "$name"); done < <(collect_env_names)
         args+=(-e "HIVE_CONTAINER_RUNTIME=$engine")
+        # The relay keys its container-vs-local mode and attach hint on this,
+        # so relay the resolved default as the apptainer path does.
+        args+=(-e "HIVE_CONTAINER_NAME=${HIVE_CONTAINER_NAME:-hive-contributor}")
         while IFS= read -r kv; do args+=(-e "$kv"); done < <(git_https_env)
         args+=(-v "$workspace:$container_workspace")
         args+=(-v "$config_dir:$container_config")
