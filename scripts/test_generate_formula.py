@@ -1270,12 +1270,14 @@ class WrapperTests(unittest.TestCase):
                 self.assertEqual(argv[:4], ["run", "--rm", "-i", "--name"])
                 self.assertNotIn("-t", argv)
                 self.assertEqual(argv[4], "hive-contributor")
+                self.assertIn("HIVE_CONTAINER_NAME=hive-contributor", argv)
             with self.subTest(engine=engine, override=True):
                 proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": engine, "HIVE_CONTAINER_NAME": "relay-two"})
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 argv, _ = self.stub_record()
                 self.assertEqual(argv[:5], ["run", "--rm", "-i", "--name", "relay-two"])
                 self.assertEqual(argv.count("--name"), 1)
+                self.assertIn("HIVE_CONTAINER_NAME=relay-two", argv)
 
     # limactl stub: `list` always succeeds; `shell` snapshots the env file
     # (mode preserved) before the wrapper removes it on the host, then exits
