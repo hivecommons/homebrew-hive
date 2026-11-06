@@ -1279,6 +1279,25 @@ class WrapperTests(unittest.TestCase):
                 self.assertEqual(argv.count("--name"), 1)
                 self.assertIn("HIVE_CONTAINER_NAME=relay-two", argv)
 
+    def test_container_name_reaches_headless_apptainer_and_lima(self):
+        # The relay keys its container-vs-local mode on HIVE_CONTAINER_NAME, so
+        # the headless hand-offs that never start an instance must still export
+        # the resolved default, not only the interactive path that names one.
+        self.add_stub("apptainer")
+        for name in ("hive-contributor", "relay-two"):
+            override = {} if name == "hive-contributor" else {"HIVE_CONTAINER_NAME": name}
+            with self.subTest(runtime="apptainer", name=name):
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "apptainer", **override})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv, env = self.stub_record()
+                self.assertEqual(self.forwarded(argv, env, "HIVE_CONTAINER_NAME"), name)
+            with self.subTest(runtime="lima", name=name):
+                self.add_lima_stub()
+                proc = self.run_wrapper(env={"HIVE_CONTRIBUTE_RUNTIME": "lima", **override})
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                contents = Path(f"{self.stub_out}.env").read_text()
+                self.assertIn(f"APPTAINERENV_HIVE_CONTAINER_NAME={name}\n", contents)
+
     # limactl stub: `list` always succeeds; `shell` snapshots the env file
     # (mode preserved) before the wrapper removes it on the host, then exits
     # with STUB_EXIT.
