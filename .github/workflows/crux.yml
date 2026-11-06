@@ -91,7 +91,7 @@ jobs:
               gh issue comment "$existing" --body "$body"
             else
               gh issue create --title "$title" \
-                --body "$body"$'\n\n'"Formula/crux.rb no longer installs on the current runners; check the hivecommons/crux release assets it points at. This issue closes automatically when a later scheduled run succeeds."
+                --body "$body"$'\n\n'"Formula/crux.rb no longer installs on the current runners; check the hivecommons/crux release assets it points at, then see the hotshot section of runbooks/rollback.md (the crux procedure is its last paragraph). This issue closes automatically when a later scheduled run succeeds."
             fi
           elif [ "$RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
             gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
