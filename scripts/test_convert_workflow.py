@@ -9,6 +9,8 @@ because `generated/contribute-candidate` starts with `generated/contribute-`.
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -21,6 +23,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONVERT_YML = REPO_ROOT / ".github" / "workflows" / "convert.yml"
+GENERATOR = REPO_ROOT / "scripts" / "generate-formula.py"
 
 CHANNEL_BRANCHES = ("generated/contribute", "generated/contribute-candidate")
 
@@ -165,6 +168,89 @@ class PruneStepTests(unittest.TestCase):
         self.assertIn("KEEP: ${{ vars.CONTRIBUTE_RELEASE_KEEP || '30' }}", step)
         self.assertIn("MIN_AGE_DAYS: ${{ vars.CONTRIBUTE_RELEASE_MIN_AGE_DAYS || '14' }}", step)
         self.assertIn("PRUNE: ${{ vars.CONTRIBUTE_RELEASE_PRUNE }}", step)
+
+
+def step_script(name: str) -> str:
+    """Return the dedented `run: |` shell of the named step in convert.yml."""
+    text = CONVERT_YML.read_text()
+    match = re.search(rf"- name: {re.escape(name)}\n(.*?)\n        run: \|\n(.*?)(?=\n      - name: |\n  \w)", text, re.S)
+    if not match:
+        raise AssertionError(f"step {name!r} with a `run: |` block not found in convert.yml")
+    return textwrap.dedent(match.group(2))
+
+
+def load_generator():
+    spec = importlib.util.spec_from_file_location("generate_formula", GENERATOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class SifManifestContractTests(unittest.TestCase):
+    """The formula's top-level `url`/`sha256` point at the `<asset>.sha256`
+    file the build job writes, and `generate-formula.py` predicts that file's
+    digest from the SIF digest alone. Both halves must agree byte for byte or
+    every `brew install` fails checksum verification, so run the workflow's
+    real shell against a fixture SIF and compare it with the generator."""
+
+    def write_manifest_like_workflow(self, tmp: Path, arch: str, payload: bytes) -> tuple[str, str]:
+        """Run the build step's manifest line and the publish step's digest
+        extraction exactly as convert.yml spells them; return (manifest, digest)."""
+        build = step_script("Build SIF from pinned image digest")
+        manifest_lines = [line for line in build.splitlines() if "sha256sum" in line]
+        self.assertEqual(len(manifest_lines), 1, build)
+        (manifest_line,) = manifest_lines
+        asset_line = next(line for line in build.splitlines() if line.startswith("asset="))
+
+        (tmp / f"hive-contributor-{arch}.sif").write_bytes(payload)
+        subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", asset_line + "\n" + manifest_line],
+            cwd=tmp,
+            env={**os.environ, "ARCH": arch},
+            check=True,
+            capture_output=True,
+        )
+
+        publish = step_script("Generate formula")
+        cut_line = next(line for line in publish.splitlines() if line.startswith(f"{arch[:3]}_sha="))
+        # The publish step reads from dist/, where the artifact download lands.
+        (tmp / "dist").mkdir(exist_ok=True)
+        manifest_name = f"hive-contributor-{arch}.sif.sha256"
+        shutil.copy(tmp / manifest_name, tmp / "dist" / manifest_name)
+        proc = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", cut_line + f"\nprintf '%s' \"${arch[:3]}_sha\""],
+            cwd=tmp,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return (tmp / manifest_name).read_text(), proc.stdout
+
+    def test_generator_predicts_the_manifest_the_workflow_uploads(self):
+        gen = load_generator()
+        for arch, payload in (("amd64", b"amd64 sif bytes\n"), ("arm64", b"\x00arm64\xff")):
+            with self.subTest(arch=arch), tempfile.TemporaryDirectory() as tmp:
+                manifest, digest = self.write_manifest_like_workflow(Path(tmp), arch, payload)
+                self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+                url = f"https://github.com/o/r/releases/download/contribute-0123456789ab/hive-contributor-{arch}.sif"
+                self.assertEqual(
+                    gen.sha256_file_digest(digest, url),
+                    hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+                    f"generate-formula.py predicts a different .sha256 file than convert.yml writes: {manifest!r}",
+                )
+
+    def test_manifest_url_names_the_uploaded_release_asset(self):
+        publish = step_script("Generate formula")
+        build = step_script("Build SIF from pinned image digest")
+        text = CONVERT_YML.read_text()
+        for arch in ("amd64", "arm64"):
+            with self.subTest(arch=arch):
+                # --<arch>-url must end in the SIF asset name so the formula's
+                # `url "<sif-url>.sha256"` is exactly the manifest uploaded below.
+                self.assertIn(f'--{arch}-url "https://github.com/${{GITHUB_REPOSITORY}}/releases/download/${{TAG}}/hive-contributor-{arch}.sif"', publish)
+                self.assertIn(f"hive-contributor-${{{{ matrix.arch }}}}.sif.sha256", text)
+        self.assertIn('asset="hive-contributor-${ARCH}.sif"', build)
+        self.assertIn("gh release upload \"$TAG\" dist/*.sif dist/*.sha256", text)
 
 
 if __name__ == "__main__":
