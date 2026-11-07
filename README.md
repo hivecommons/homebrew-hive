@@ -120,8 +120,7 @@ closes. The `hotshot` formula ships the CLI binary only; the double-clickable
   and stops it on exit, just like Linux; use `CONTRIBUTOR_MODE=headless` for
   non-TTY use. Run manual attach commands inside `limactl shell apptainer`.
   Caveat: the Lima path runs the pinned OCI image reference inside
-  the VM rather than the local SIF asset unless the user shares the Homebrew
-  Cellar into Lima. It forwards the same environment (including the HTTPS git
+  the VM rather than a local SIF asset (macOS installs do not download one). It forwards the same environment (including the HTTPS git
   credential helper) and honours the same `HIVE_CONTRIBUTE_MOUNT_*` opt-ins as
   the Linux Apptainer path. This requires Lima to share your home directory
   into the VM at the same path **writable**: Lima's default home share is
