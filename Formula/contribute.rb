@@ -5,9 +5,9 @@
 class Contribute < Formula
   desc "Hive contribute relay wrapper"
   homepage "https://github.com/hivecommons/hive"
-  url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c75c93e2d795/hive-contributor-amd64.sif.sha256"
-  version "20261107.122720.c75c93e2d795"
-  sha256 "343e231fa89cf3637586991ee9c4074ee40f6bf6a722147ac7016cbe771177bc"
+  url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-127ddea78fa1/hive-contributor-amd64.sif.sha256"
+  version "20261107.182340.127ddea78fa1"
+  sha256 "f807d4ba52b5f651b2b78e5a0962519c16db5a0218f338f3d591b3382610ecfb"
   license "Apache-2.0"
 
   on_linux do
@@ -15,12 +15,12 @@ class Contribute < Formula
 
     resource "sif" do
       on_arm do
-        url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c75c93e2d795/hive-contributor-arm64.sif"
-        sha256 "28462a6086c1ba360189d2b130b071f288048b11d4293e38a17f92eee409d1c1"
+        url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-127ddea78fa1/hive-contributor-arm64.sif"
+        sha256 "388aa219f4a7e2cc67fa645fcccb9074fee55dc060cca7b77f279420803204ed"
       end
       on_intel do
-        url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-c75c93e2d795/hive-contributor-amd64.sif"
-        sha256 "7c61addb2e66624d47ff335e7ff843b03f4707f45d456ee903869ff5956c7b34"
+        url "https://github.com/hivecommons/homebrew-hive/releases/download/contribute-127ddea78fa1/hive-contributor-amd64.sif"
+        sha256 "7bdef3af86c9d2cce436a708ca108aa2731699238541d59d3a4a51dc32d7e011"
       end
     end
   end
@@ -33,10 +33,10 @@ class Contribute < Formula
       #!/usr/bin/env bash
       set -euo pipefail
 
-      WRAPPER_VERSION="20261107.122720.c75c93e2d795"
+      WRAPPER_VERSION="20261107.182340.127ddea78fa1"
       CHANNEL="stable"
-      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:c75c93e2d7953ac44aeda287383e0719421ec19f007cf377e5062186ce5bd933"
-      IMAGE_DIGEST="sha256:c75c93e2d7953ac44aeda287383e0719421ec19f007cf377e5062186ce5bd933"
+      IMAGE_REF="ghcr.io/hivecommons/hive-contributor@sha256:127ddea78fa19fe6b2bc6ef0ac20afc16e0c988b3ce162f05ce12fee768e0d84"
+      IMAGE_DIGEST="sha256:127ddea78fa19fe6b2bc6ef0ac20afc16e0c988b3ce162f05ce12fee768e0d84"
       SIF_PATH="#{libexec}/hive-contributor-stable.sif"
       # Interactive Apptainer attaches to the tmux session the contributor
       # image creates inside the instance; the name is the image-side contract.
@@ -489,7 +489,7 @@ class Contribute < Formula
   def caveats
     <<~EOS
       This formula tracks the stable channel resolved at generation time:
-        ghcr.io/hivecommons/hive-contributor@sha256:c75c93e2d7953ac44aeda287383e0719421ec19f007cf377e5062186ce5bd933
+        ghcr.io/hivecommons/hive-contributor@sha256:127ddea78fa19fe6b2bc6ef0ac20afc16e0c988b3ce162f05ce12fee768e0d84
 
       Linux uses Apptainer natively. Homebrew's apptainer formula is Linux-only;
       on macOS the wrapper uses Docker or Podman when present, or a Lima VM when
@@ -519,7 +519,7 @@ class Contribute < Formula
 
   test do
     assert_match(
-      "hive-contribute 20261107.122720.c75c93e2d795",
+      "hive-contribute 20261107.182340.127ddea78fa1",
       shell_output("#{bin}/hive-contribute --wrapper-version"),
     )
     assert_match "Usage: hive-contribute", shell_output("#{bin}/hive-contribute --help")
