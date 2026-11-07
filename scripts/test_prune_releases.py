@@ -114,6 +114,8 @@ class ApiTests(unittest.TestCase):
             if path.startswith("o/r/branches") or "/branches?" in path:
                 return json.dumps([[{"name": "main"}, {"name": "generated/contribute-d08dd5046158"},
                                     {"name": "generated/contribute"}, {"name": "feature/x"}]])
+            if "/pulls?" in path:
+                return json.dumps([{"number": 1}] if "generated/contribute-d08dd5046158" in path else [])
             if "ref=main" in path and "contribute.rb" in path:
                 return 'url ".../releases/download/contribute-000000000001/x.sif"'
             if "ref=generated/contribute-d08dd5046158" in path:
@@ -126,6 +128,21 @@ class ApiTests(unittest.TestCase):
         refs = [c.args[0] for c in api.call_args_list]
         self.assertTrue(any("ref=generated/contribute-d08dd5046158" in r for r in refs))
         self.assertFalse(any("ref=feature/x" in r for r in refs))
+
+    def test_orphaned_legacy_branch_does_not_protect_its_release(self):
+        def fake_api(path, *extra):
+            if "/branches?" in path:
+                return json.dumps([[{"name": "generated/contribute-d08dd5046158"}]])
+            if "/pulls?" in path:
+                return json.dumps([])
+            if "ref=main" in path and "contribute.rb" in path:
+                return 'url ".../releases/download/contribute-000000000001/x.sif"'
+            raise prune.ApiError("HTTP 404: Not Found")
+
+        with mock.patch.object(prune, "gh_api", side_effect=fake_api) as api, mock.patch("builtins.print"):
+            tags = prune.protected_tags("o/r", [])
+        self.assertEqual(tags, {"contribute-000000000001"})
+        self.assertFalse(any("ref=generated/contribute-d08dd5046158" in c.args[0] for c in api.call_args_list))
 
     def test_malformed_timestamp_exits_with_error(self):
         bad = [{"tag_name": "contribute-000000000001", "published_at": "not-a-date", "created_at": "nope"}]
