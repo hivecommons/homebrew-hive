@@ -9,7 +9,8 @@ with their tags.
 Retention, applied per channel: a release is kept if it is among the newest
 --keep releases, is younger than --min-age-days, or its tag is protected
 (referenced by the formula on main, on the long-lived generated/<formula>
-branch, on any legacy generated/<formula>-<digest12> branch, or listed with
+branch, on any legacy generated/<formula>-<digest12> branch that still has an open pull
+request, or listed with
 --protect-tag). Age and ordering use published_at (the moment the release
 went live; created_at is the target commit's date), falling back to
 created_at for unpublished drafts. Hand-maintained releases (crux, hotshot,
@@ -89,12 +90,21 @@ def fetch_legacy_branches(repo: str) -> dict[str, str]:
     return branches
 
 
+def has_open_pr(repo: str, branch: str) -> bool:
+    owner = repo.split("/")[0]
+    return bool(json.loads(gh_api(f"repos/{repo}/pulls?state=open&head={owner}:{branch}&per_page=1")))
+
+
 def protected_tags(repo: str, extra: list[str]) -> set[str]:
     tags = set(extra)
     for formula in FORMULAE.values():
         for ref in ("main", f"generated/{formula}"):
             tags |= fetch_formula_tags(repo, ref, formula, required=(ref, formula) in REQUIRED_FORMULAE)
     for branch, formula in fetch_legacy_branches(repo).items():
+        # A legacy branch only backs an in-flight formula PR; once that PR is closed it must not pin its release.
+        if not has_open_pr(repo, branch):
+            print(f"skipping orphaned legacy branch {branch}: no open pull request, so it does not protect its release")
+            continue
         tags |= fetch_formula_tags(repo, branch, formula)
     return tags
 
