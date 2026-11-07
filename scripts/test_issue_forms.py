@@ -26,6 +26,11 @@ WRAPPER = REPO_ROOT / "scripts" / "contribute-wrapper.sh.in"
 # https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema
 FORM_ELEMENT_TYPES = {"markdown", "textarea", "input", "dropdown", "checkboxes"}
 ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+COMMUNITY_URLS = (
+    "https://hivecommons.dev/discord",
+    "https://www.twitch.tv/hivecommons",
+    "https://docs.hivecommons.dev/docs/community/meetings",
+)
 
 
 def load_yaml(path: Path):
@@ -150,10 +155,21 @@ class IssueChooserConfigTests(unittest.TestCase):
         self.assertIn("https://github.com/hivecommons/.github/blob/main/SECURITY.md", urls)
 
     def test_community_contact_links_match_hive(self):
-        # Same Discord and Twitch targets as the hive README's Community section.
+        # Same Discord, Twitch and meeting targets as the hive README's Community section.
         urls = [link["url"] for link in self.config["contact_links"]]
-        self.assertIn("https://hivecommons.dev/discord", urls)
-        self.assertIn("https://www.twitch.tv/hivecommons", urls)
+        for url in COMMUNITY_URLS:
+            with self.subTest(url=url):
+                self.assertIn(url, urls)
+
+
+class ReadmeCommunityLinkTests(unittest.TestCase):
+    def test_readme_community_section_links_every_channel(self):
+        readme = (REPO_ROOT / "README.md").read_text()
+        match = re.search(r"^## Community\n(.*?)(?=^## )", readme, re.M | re.S)
+        self.assertIsNotNone(match, "README has no ## Community section")
+        for url in COMMUNITY_URLS:
+            with self.subTest(url=url):
+                self.assertIn(url, match.group(1))
 
 
 @unittest.skipUnless(yaml, "PyYAML not installed")
