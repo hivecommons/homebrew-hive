@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-from pathlib import Path
+import hashlib
+from pathlib import PurePosixPath, Path
 
 WRAPPER_TEMPLATE = Path(__file__).with_name("contribute-wrapper.sh.in")
 
@@ -40,6 +41,20 @@ def formula_version(args: argparse.Namespace) -> str:
     return f"{stamp:%Y%m%d.%H%M%S}.{args.version}"
 
 
+def sha256_file_digest(asset_sha256: str, asset_url: str) -> str:
+    """Return the SHA-256 of the `<asset>.sha256` file `convert.yml` uploads.
+
+    The build job writes `<asset>.sha256` with `sha256sum <asset>` (two spaces,
+    basename, trailing newline) and uploads it beside the SIF. Using that tiny
+    release asset as the formula's top-level `url` keeps the primary download
+    to 93 bytes on macOS while the ~1.4 GB SIF is fetched only on Linux via
+    `on_linux { resource "sif" }`.
+    """
+    asset_name = PurePosixPath(asset_url).name
+    line = f"{asset_sha256}  {asset_name}\n"
+    return hashlib.sha256(line.encode("utf-8")).hexdigest()
+
+
 def render_wrapper(args: argparse.Namespace, sif: str, caveat_channel: str) -> str:
     values = {
         "@VERSION@": ruby_quote(formula_version(args)),
@@ -62,6 +77,8 @@ def render(args: argparse.Namespace) -> str:
     caveat_channel = "candidate pre-release" if args.channel == "candidate" else "stable"
     binary = args.binary
     sif = f"hive-contributor-{args.channel}.sif"
+    manifest_url = f"{args.amd64_url}.sha256"
+    manifest_sha256 = sha256_file_digest(args.amd64_sha256, args.amd64_url)
     return f'''# typed: false
 # frozen_string_literal: true
 
@@ -69,23 +86,30 @@ def render(args: argparse.Namespace) -> str:
 class {klass} < Formula
   desc "Hive contribute relay wrapper{prerelease}"
   homepage "https://github.com/hivecommons/hive"
+  url "{ruby_quote(manifest_url)}"
   version "{ruby_quote(formula_version(args))}"
+  sha256 "{ruby_quote(manifest_sha256)}"
   license "Apache-2.0"
-
-  if Hardware::CPU.arm?
-    url "{ruby_quote(args.arm64_url)}"
-    sha256 "{ruby_quote(args.arm64_sha256)}"
-  else
-    url "{ruby_quote(args.amd64_url)}"
-    sha256 "{ruby_quote(args.amd64_sha256)}"
-  end
 
   on_linux do
     depends_on "apptainer"
+
+    resource "sif" do
+      on_arm do
+        url "{ruby_quote(args.arm64_url)}"
+        sha256 "{ruby_quote(args.arm64_sha256)}"
+      end
+      on_intel do
+        url "{ruby_quote(args.amd64_url)}"
+        sha256 "{ruby_quote(args.amd64_sha256)}"
+      end
+    end
   end
 
   def install
-    libexec.install Dir["*.sif"].first => "{sif}"
+    if OS.linux?
+      resource("sif").stage {{ libexec.install Dir["*.sif"].first => "{sif}" }}
+    end
     (bin/"{binary}").write <<~SH
 {render_wrapper(args, sif, caveat_channel)}    SH
   end
