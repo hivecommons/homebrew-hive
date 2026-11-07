@@ -285,6 +285,8 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
 Ask setup and contributor questions on [Discord](https://hivecommons.dev/discord),
 watch the hive live on [Twitch](https://www.twitch.tv/hivecommons), or start a
 thread in [Hive's GitHub Discussions](https://github.com/hivecommons/hive/discussions).
+To talk to the maintainers live, join the biweekly
+[Hive Commons community meeting](https://docs.hivecommons.dev/docs/community/meetings).
 
 ## Rollback
 
