@@ -172,6 +172,38 @@ class ReadmeCommunityLinkTests(unittest.TestCase):
                 self.assertIn(url, match.group(1))
 
 
+class ContributingGuideTests(unittest.TestCase):
+    """Without CONTRIBUTING.md GitHub falls back to the org file, which names hive's branches."""
+
+    def setUp(self):
+        self.guide = (REPO_ROOT / "CONTRIBUTING.md").read_text()
+
+    def test_names_main_as_the_pull_request_target(self):
+        self.assertIn("**`main`**", self.guide)
+
+    def test_points_at_the_tap_rules_and_ci_test_command(self):
+        self.assertIn("(README.md#contributing)", self.guide)
+        self.assertIn("(Formula/README.md)", self.guide)
+        ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        command = "python3 -m unittest discover -s scripts -p 'test_*.py' -v"
+        self.assertIn(command, ci)
+        self.assertIn(command, self.guide)
+
+    def test_links_starter_labels_issue_forms_and_community(self):
+        for target in (
+            "/labels/good%20first%20issue",
+            "/labels/help%20wanted",
+            "/issues/new/choose",
+            "https://hivecommons.dev/discord",
+            "https://docs.hivecommons.dev/docs/community/meetings",
+        ):
+            with self.subTest(target=target):
+                self.assertIn(target, self.guide)
+        for template in re.findall(r"issues/new\?template=([\w.-]+)\)", self.guide):
+            with self.subTest(template=template):
+                self.assertTrue((TEMPLATE_DIR / template).is_file(), template)
+
+
 @unittest.skipUnless(yaml, "PyYAML not installed")
 class BugReportContractTests(unittest.TestCase):
     """The bug form enumerates tap facts; keep it in step with their sources."""
