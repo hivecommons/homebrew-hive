@@ -190,6 +190,19 @@ class InstallApptainerStepTests(unittest.TestCase):
         self.assertIsNotNone(match, "add-apt-repository must be wrapped in `sudo timeout N` inside the retry loop")
         self.assertTrue(0 < int(match.group(1)) <= 300)
 
+    def test_github_release_deb_is_the_fallback_when_the_ppa_loop_is_exhausted(self):
+        script = step_script("Install Apptainer")
+        loop_end = re.search(r"for i in 1 2 3 4 5; do\n.*?\n\s*done\n", script, re.S).end()
+        tail = script[loop_end:]
+        self.assertNotRegex(script[:loop_end], r"exit 1", "the PPA loop must not abort; it falls back instead")
+        self.assertIn("https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_FALLBACK_VERSION}/", tail)
+        self.assertIn('deb="apptainer_${APPTAINER_FALLBACK_VERSION}_${ARCH}.deb"', tail)
+        self.assertIn("::warning::", tail)
+        self.assertIn('sudo apt-get install -y "./$deb"', tail)
+        self.assertRegex(tail, r"\[ \"\$installed\" != true \]")
+        self.assertTrue(tail.rstrip().endswith("apptainer --version"))
+        self.assertIn("installed=true\n    break", script)
+
 
 def load_generator():
     spec = importlib.util.spec_from_file_location("generate_formula", GENERATOR)

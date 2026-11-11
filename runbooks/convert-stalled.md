@@ -44,7 +44,7 @@ producer of formula updates.
    | Failing job / step | Likely cause | Action |
    |---|---|---|
    | `resolve` / "could not resolve digest" | `stable` or `candidate` tag missing or GHCR unavailable | Check the tag upstream; re-run once GHCR recovers. Fix the channel upstream if it was removed. |
-   | `build` / Install Apptainer | PPA or apt mirror outage | Each `add-apt-repository` attempt is bounded by a timeout and retried five times; if all fail, re-run the failed jobs. |
+   | `build` / Install Apptainer | PPA or apt mirror outage | Each `add-apt-repository` attempt is bounded by a timeout and retried five times; if all fail, the step falls back to the pinned GitHub release `.deb` (see below) and emits a `::warning::`. |
    | `build` / Build SIF | Image cannot be pulled or converted (one arch missing) | Confirm the upstream manifest lists both `linux/amd64` and `linux/arm64`. |
    | `publish` / release assets | A partial release exists for this digest | Re-run with `force=true` (below). |
    | Generate / smoke formula | `scripts/generate-formula.py` or wrapper template regression | Reproduce locally with `python3 scripts/test_generate_formula.py`, then fix on a branch. |
@@ -56,6 +56,12 @@ producer of formula updates.
 
 3. If the schedule is silently disabled, re-enable it in the Actions tab (or
    any push or manual dispatch to `convert.yml` resets the 60-day timer).
+
+### Apptainer install fallback
+
+`Install Apptainer` tries the Launchpad PPA first. Only after all five attempts fail does it download `apptainer_<version>_amd64.deb` from the `apptainer/apptainer` GitHub release for the version pinned in `APPTAINER_FALLBACK_VERSION` (step `env`), and installs it with `apt-get install` so dependencies resolve. A `::warning::` in the run log marks that the fallback was used. Upstream publishes `.deb` assets for amd64 only, so the arm64 leg still fails during a PPA outage; re-run it once Launchpad recovers. No checksum is verified when the release has no `sha256sums` asset.
+
+To bump the version, change `APPTAINER_FALLBACK_VERSION` in `.github/workflows/convert.yml` to a release tag (without the `v`) that has the `.deb` asset (`gh release view v<version> --repo apptainer/apptainer`).
 
 ## Recover
 

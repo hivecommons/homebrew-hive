@@ -125,19 +125,32 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Install Apptainer
+        env:
+          APPTAINER_FALLBACK_VERSION: 1.5.5
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y software-properties-common squashfs-tools
+          installed=false
           for i in 1 2 3 4 5; do
             if sudo timeout 120 add-apt-repository -y ppa:apptainer/ppa && sudo apt-get update && sudo apt-get install -y apptainer; then
+              installed=true
               break
-            fi
-            if [ "$i" = 5 ]; then
-              exit 1
             fi
             sleep $((10 * i))
           done
+          if [ "$installed" != true ]; then
+            echo "::warning::Launchpad PPA unavailable; installing Apptainer $APPTAINER_FALLBACK_VERSION from the GitHub release .deb"
+            # Upstream publishes .deb assets for amd64 only, and no sha256sums file for this release, so the download is not checksum-verified.
+            if [ "$ARCH" != amd64 ]; then
+              echo "::error::No GitHub release .deb is published for $ARCH; re-run once the Launchpad PPA recovers"
+              exit 1
+            fi
+            deb="apptainer_${APPTAINER_FALLBACK_VERSION}_${ARCH}.deb"
+            curl -fsSL --retry 5 --retry-all-errors -o "$deb" "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_FALLBACK_VERSION}/$deb"
+            sudo apt-get install -y "./$deb"
+          fi
           apptainer --version
 
       - name: Build SIF from pinned image digest
