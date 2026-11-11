@@ -173,7 +173,7 @@ class PruneStepTests(unittest.TestCase):
 def step_script(name: str) -> str:
     """Return the dedented `run: |` shell of the named step in convert.yml."""
     text = CONVERT_YML.read_text()
-    match = re.search(rf"- name: {re.escape(name)}\n(.*?)\n        run: \|\n(.*?)(?=\n      - name: |\n  \w)", text, re.S)
+    match = re.search(rf"- name: {re.escape(name)}\n(.*?)        run: \|\n(.*?)(?=\n      - name: |\n  \w)", text, re.S)
     if not match:
         raise AssertionError(f"step {name!r} with a `run: |` block not found in convert.yml")
     return textwrap.dedent(match.group(2))
