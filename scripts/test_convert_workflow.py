@@ -173,10 +173,22 @@ class PruneStepTests(unittest.TestCase):
 def step_script(name: str) -> str:
     """Return the dedented `run: |` shell of the named step in convert.yml."""
     text = CONVERT_YML.read_text()
-    match = re.search(rf"- name: {re.escape(name)}\n(.*?)\n        run: \|\n(.*?)(?=\n      - name: |\n  \w)", text, re.S)
+    match = re.search(rf"- name: {re.escape(name)}\n(.*?)        run: \|\n(.*?)(?=\n      - name: |\n  \w)", text, re.S)
     if not match:
         raise AssertionError(f"step {name!r} with a `run: |` block not found in convert.yml")
     return textwrap.dedent(match.group(2))
+
+
+class InstallApptainerStepTests(unittest.TestCase):
+    """A hung Launchpad call must fail fast so the retry loop can recover."""
+
+    def test_add_apt_repository_attempt_is_bounded_inside_retry_loop(self):
+        script = step_script("Install Apptainer")
+        loop = re.search(r"for i in 1 2 3 4 5; do\n(.*?)\n\s*done", script, re.S)
+        self.assertIsNotNone(loop, script)
+        match = re.search(r"sudo timeout (\d+) add-apt-repository ", loop.group(1))
+        self.assertIsNotNone(match, "add-apt-repository must be wrapped in `sudo timeout N` inside the retry loop")
+        self.assertTrue(0 < int(match.group(1)) <= 300)
 
 
 def load_generator():

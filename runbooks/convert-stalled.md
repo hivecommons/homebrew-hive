@@ -44,7 +44,7 @@ producer of formula updates.
    | Failing job / step | Likely cause | Action |
    |---|---|---|
    | `resolve` / "could not resolve digest" | `stable` or `candidate` tag missing or GHCR unavailable | Check the tag upstream; re-run once GHCR recovers. Fix the channel upstream if it was removed. |
-   | `build` / Install Apptainer | PPA or apt mirror outage | Re-run the failed jobs. |
+   | `build` / Install Apptainer | PPA or apt mirror outage | Each `add-apt-repository` attempt is bounded by a timeout and retried five times; if all fail, re-run the failed jobs. |
    | `build` / Build SIF | Image cannot be pulled or converted (one arch missing) | Confirm the upstream manifest lists both `linux/amd64` and `linux/arm64`. |
    | `publish` / release assets | A partial release exists for this digest | Re-run with `force=true` (below). |
    | Generate / smoke formula | `scripts/generate-formula.py` or wrapper template regression | Reproduce locally with `python3 scripts/test_generate_formula.py`, then fix on a branch. |
