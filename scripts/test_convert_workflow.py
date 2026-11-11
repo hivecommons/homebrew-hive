@@ -179,6 +179,18 @@ def step_script(name: str) -> str:
     return textwrap.dedent(match.group(2))
 
 
+class InstallApptainerStepTests(unittest.TestCase):
+    """A hung Launchpad call must fail fast so the retry loop can recover."""
+
+    def test_add_apt_repository_attempt_is_bounded_inside_retry_loop(self):
+        script = step_script("Install Apptainer")
+        loop = re.search(r"for i in 1 2 3 4 5; do\n(.*?)\n\s*done", script, re.S)
+        self.assertIsNotNone(loop, script)
+        match = re.search(r"sudo timeout (\d+) add-apt-repository ", loop.group(1))
+        self.assertIsNotNone(match, "add-apt-repository must be wrapped in `sudo timeout N` inside the retry loop")
+        self.assertTrue(0 < int(match.group(1)) <= 300)
+
+
 def load_generator():
     spec = importlib.util.spec_from_file_location("generate_formula", GENERATOR)
     module = importlib.util.module_from_spec(spec)
