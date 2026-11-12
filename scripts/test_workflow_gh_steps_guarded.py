@@ -38,15 +38,19 @@ BASELINE = {
 GH_INVOCATION = re.compile(r"(^|[\s(`$;|&])gh\s", re.M)
 
 
-def run_steps(workflow: Path) -> list[tuple[str, str]]:
-    """Return (step name, run body) for every `run: |` step in the workflow.
+def run_steps_from_text(text: str) -> list[tuple[str, str]]:
+    """Return (step name, run body) for every `run:` step in the workflow text.
+
+    Accepts any `run:` scalar form: block scalars (`run: |`, `run: |-`, `run: |+`,
+    `run: >`, `run: >-`, `run: >+`) and plain/quoted single-line scalars
+    (`run: gh pr comment ...`, `run: "gh ..."`, `run: 'gh ...'`).
 
     Hand-rolled on purpose: PyYAML is not a dependency of this tap, and the
     other workflow tests already locate steps the same way (indentation and
     `- name:`), so a workflow this parser cannot read would already have
     broken them.
     """
-    lines = workflow.read_text().split("\n")
+    lines = text.split("\n")
     starts = [i for i, line in enumerate(lines) if re.match(r"\s+- name: ", line)]
     steps = []
     for index, start in enumerate(starts):
@@ -59,10 +63,30 @@ def run_steps(workflow: Path) -> list[tuple[str, str]]:
                 break
         name = lines[start].split("- name: ", 1)[1].strip()
         body = "\n".join(lines[start + 1 : end])
-        run = re.search(r"^\s+run: \|\n(.*)", body, re.S | re.M)
+        
+        # Try block scalar form: `run: [|>][-+]?\s*\n`
+        run = re.search(r"^\s+run: [|>][-+]?\s*\n(.*)", body, re.S | re.M)
         if run:
             steps.append((name, run.group(1)))
+        else:
+            # Try single-line form: `run: (?![|>])...` (not a block scalar marker)
+            run = re.search(r"^\s+run: (?![|>])(.+)$", body, re.M)
+            if run:
+                # Strip surrounding quotes if present
+                line_body = run.group(1).strip()
+                if (line_body.startswith('"') and line_body.endswith('"')) or \
+                   (line_body.startswith("'") and line_body.endswith("'")):
+                    line_body = line_body[1:-1]
+                steps.append((name, line_body))
     return steps
+
+
+def run_steps(workflow: Path) -> list[tuple[str, str]]:
+    """Return (step name, run body) for every `run:` step in the workflow.
+
+    Wrapper around run_steps_from_text for file-based access.
+    """
+    return run_steps_from_text(workflow.read_text())
 
 
 def gh_steps() -> set[tuple[str, str]]:
@@ -89,6 +113,78 @@ def guarded_steps() -> set[tuple[str, str]]:
 
 
 class WorkflowGhStepsGuardedTests(unittest.TestCase):
+    def test_parser_reads_every_run_scalar_form(self):
+        r"""Parser recognizes `run:` in all YAML scalar forms: block and single-line.
+
+        The old regex `^\s+run: \|\n(.*)` only matched bare `run: |` followed by
+        a newline. This test feeds a synthetic workflow with every form (bare block,
+        block with chomping indicators, folded block, and single-line plain/quoted),
+        each invoking `gh`, plus one non-gh step, and asserts:
+          - run_steps_from_text returns all gh steps (not just the bare `|`).
+          - each gh step body matches GH_INVOCATION.
+          - the non-gh step body does not match GH_INVOCATION.
+        This test fails with the old regex (finds only 1 of 7 steps).
+        """
+        synthetic_workflow = """
+        - name: Run with bare block
+          run: |
+            gh pr comment 1 --body "bare block"
+        - name: Run with block strip
+          run: |-
+            gh pr comment 1 --body "block strip"
+        - name: Run with block keep
+          run: |+
+            gh pr comment 1 --body "block keep"
+        - name: Run with folded block
+          run: >
+            gh pr comment 1 --body "folded block"
+        - name: Run with folded strip
+          run: >-
+            gh pr comment 1 --body "folded strip"
+        - name: Run with plain inline
+          run: gh pr comment 1 --body "plain inline"
+        - name: Run with double-quoted inline
+          run: "gh pr comment 1 --body \"double-quoted inline\""
+        - name: Run with single-quoted inline
+          run: 'gh pr comment 1 --body "single-quoted inline"'
+        - name: Non-gh step
+          run: echo "plain shell step"
+"""
+        steps = run_steps_from_text(synthetic_workflow)
+        
+        # Should find all 9 steps.
+        self.assertEqual(len(steps), 9)
+        
+        # Check each step name matches what we expect.
+        expected_names = [
+            "Run with bare block",
+            "Run with block strip",
+            "Run with block keep",
+            "Run with folded block",
+            "Run with folded strip",
+            "Run with plain inline",
+            "Run with double-quoted inline",
+            "Run with single-quoted inline",
+            "Non-gh step",
+        ]
+        actual_names = [name for name, _ in steps]
+        self.assertEqual(actual_names, expected_names)
+        
+        # First 8 steps invoke gh (should match GH_INVOCATION).
+        for i in range(8):
+            name, body = steps[i]
+            self.assertTrue(
+                GH_INVOCATION.search(body),
+                f"Step {i} ({name!r}) should invoke gh, but body is {body!r}"
+            )
+        
+        # Last step does not invoke gh.
+        name, body = steps[8]
+        self.assertFalse(
+            GH_INVOCATION.search(body),
+            f"Step {name!r} should not invoke gh, but body is {body!r}"
+        )
+
     def test_parser_sees_the_steps_the_other_tests_rely_on(self):
         """If this parser silently found nothing, the gate would pass vacuously."""
         steps = gh_steps()
