@@ -1,5 +1,9 @@
 """Tests for the "tracking issue" steps shared by four workflows.
 
+crux.yml and hotshot.yml also open a "formula behind upstream" issue from
+their hand-copied "Check upstream release" step; those two steps are covered
+at the bottom of this file.
+
 convert.yml, crux.yml and hotshot.yml each end in a notify-failure job that
 keeps exactly one issue open while scheduled runs are red and closes it when
 a later scheduled run is green; convert-freshness.yml does the same for the
@@ -32,7 +36,7 @@ RUN_URL = "https://github.com/o/r/actions/runs/4242"
 NOTIFY_STEP = "Open or update the tracking issue on failure, close it on success"
 FRESHNESS_STEP = "Open or update the tracking issue when stale, close it when fresh"
 
-# Every write goes through the gh CLI; the stub answers the two reads from
+# Every write goes through the gh CLI; the stub answers the reads from
 # fixtures in $GH_STUB_DIR (applying the --jq filter with the real jq), accepts
 # the three writes, and logs each argv so tests can assert what happened.
 GH_STUB = r"""#!/usr/bin/env bash
@@ -55,6 +59,19 @@ case "${1:-} ${2:-}" in
     done
     file="$GH_STUB_DIR/$fixture"
     [[ -e "$file" ]] || { echo "stub gh: no fixture $fixture" >&2; exit 99; }
+    jq -r "$filter" "$file" ;;
+  "release view")
+    filter=""
+    shift 2
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --jq) filter="$2"; shift 2 ;;
+        --repo|--json) shift 2 ;;
+        *) echo "stub gh: unexpected release flag: $1" >&2; exit 97 ;;
+      esac
+    done
+    file="$GH_STUB_DIR/release.json"
+    [[ -e "$file" ]] || { echo "stub gh: no fixture release.json" >&2; exit 99; }
     jq -r "$filter" "$file" ;;
   "issue comment"|"issue create"|"issue close") exit 0 ;;
   *) echo "stub gh: unexpected subcommand: $*" >&2; exit 98 ;;
@@ -133,7 +150,9 @@ class TrackingIssueStepBase(unittest.TestCase):
     def existing_issue(self, number: int = 31, title: str | None = None) -> None:
         self.fixture("issues.json", [{"number": number, "title": title or self.title}])
 
-    def run_step(self, event: str = "schedule", **env_overrides: str) -> subprocess.CompletedProcess:
+    def run_step(
+        self, event: str = "schedule", cwd: Path | None = None, check: bool = True, **env_overrides: str
+    ) -> subprocess.CompletedProcess:
         env = {
             **os.environ,
             **step_literal_env(self.workflow, self.step),
@@ -146,8 +165,9 @@ class TrackingIssueStepBase(unittest.TestCase):
             "GITHUB_EVENT_NAME": event,
             **env_overrides,
         }
-        proc = subprocess.run(["bash", "-c", step_script(self.workflow, self.step)], env=env, capture_output=True, text=True)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        proc = subprocess.run(["bash", "-c", step_script(self.workflow, self.step)], env=env, cwd=cwd, capture_output=True, text=True)
+        if check:
+            self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc
 
     def calls(self) -> list[Call]:
@@ -165,7 +185,9 @@ class TrackingIssueStepBase(unittest.TestCase):
     def assert_no_write(self) -> None:
         self.assertEqual([w.action for w in self.writes()], [])
 
-    # -- shared contract -----------------------------------------------------
+
+class TrackingIssueContract(TrackingIssueStepBase):
+    """The decision table every tracking-issue step shares."""
 
     def test_lookup_matches_the_title_exactly(self):
         """The --jq filter must not pick up an issue that merely contains the title."""
@@ -205,7 +227,7 @@ class TrackingIssueStepBase(unittest.TestCase):
         raise NotImplementedError
 
 
-class NotifyFailureBase(TrackingIssueStepBase):
+class NotifyFailureBase(TrackingIssueContract):
     """convert.yml / crux.yml / hotshot.yml: outcome comes from needs.*.result."""
 
     step = NOTIFY_STEP
@@ -239,12 +261,51 @@ class NotifyFailureBase(TrackingIssueStepBase):
                 self.assert_no_write()
 
 
-class CruxNotifyFailureTests(NotifyFailureBase):
+class UpstreamNotifyFailureBase(NotifyFailureBase):
+    """crux.yml / hotshot.yml: the closing decision also needs needs.check-upstream.result."""
+
+    def failing(self, event: str = "schedule") -> None:
+        self.run_step(event, RESULT="failure", UPSTREAM_RESULT="success")
+
+    def succeeding(self, event: str = "schedule") -> None:
+        self.run_step(event, RESULT="success", UPSTREAM_RESULT="success")
+
+    def test_skipped_or_cancelled_result_writes_nothing(self):
+        for result in ("cancelled", "skipped"):
+            with self.subTest(result=result):
+                self.setUp()
+                self.existing_issue(31)
+                self.run_step("schedule", RESULT=result, UPSTREAM_RESULT=result)
+                self.assert_no_write()
+
+    def test_only_a_fully_green_run_closes_the_issue(self):
+        for result, upstream in (("success", "skipped"), ("success", "cancelled"), ("skipped", "success")):
+            with self.subTest(result=result, upstream=upstream):
+                self.setUp()
+                self.existing_issue(31)
+                self.run_step("schedule", RESULT=result, UPSTREAM_RESULT=upstream)
+                self.assert_no_write()
+
+    def test_failed_upstream_check_alone_reports(self):
+        self.run_step("schedule", RESULT="success", UPSTREAM_RESULT="failure")
+        call = self.assert_only_write("issue create")
+        self.assertEqual(call.flag("--title"), self.title)
+        self.assertIn("check-upstream: failure", call.flag("--body"))
+
+    def test_failed_upstream_check_alone_comments_on_an_open_issue(self):
+        self.existing_issue(31)
+        self.run_step("schedule", RESULT="success", UPSTREAM_RESULT="failure")
+        call = self.assert_only_write("issue comment")
+        self.assertEqual(call.argv[2], "31")
+        self.assertIn("check-upstream: failure", call.flag("--body"))
+
+
+class CruxNotifyFailureTests(UpstreamNotifyFailureBase):
     workflow = "crux.yml"
     title = "crux formula failing"
 
 
-class HotshotNotifyFailureTests(NotifyFailureBase):
+class HotshotNotifyFailureTests(UpstreamNotifyFailureBase):
     workflow = "hotshot.yml"
     title = "hotshot formula failing"
 
@@ -275,7 +336,7 @@ class ConvertNotifyFailureTests(NotifyFailureBase):
         self.assert_only_write("issue close")
 
 
-class ConvertFreshnessTests(TrackingIssueStepBase):
+class ConvertFreshnessTests(TrackingIssueContract):
     workflow = "convert-freshness.yml"
     step = FRESHNESS_STEP
     title = "Convert pipeline stale"
@@ -320,7 +381,98 @@ class ConvertFreshnessTests(TrackingIssueStepBase):
         self.assert_only_write("issue close")
 
 
-del TrackingIssueStepBase, NotifyFailureBase
+class CheckUpstreamBase(TrackingIssueStepBase):
+    """crux.yml / hotshot.yml: compare the formula's pinned tag with the latest upstream release."""
+
+    step = "Check upstream release"
+    formula = ""
+    pinned = "v1.2.3"
+
+    def setUp(self):
+        super().setUp()
+        if self.workflow:
+            self.title = f"{self.formula} formula behind upstream"
+            self.checkout = self.tmp / "checkout"
+            self.write_formula(f'  url "{self.url(self.pinned)}"\n')
+            self.release(self.pinned)
+
+    def url(self, tag: str) -> str:
+        raise NotImplementedError
+
+    def write_formula(self, url_line: str) -> None:
+        path = self.checkout / "Formula" / f"{self.formula}.rb"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'class X < Formula\n  desc "x"\n{url_line}end\n')
+
+    def release(self, tag: str) -> None:
+        self.fixture("release.json", {"tagName": tag})
+
+    def check(self, event: str = "schedule", **kwargs) -> subprocess.CompletedProcess:
+        return self.run_step(event, cwd=self.checkout, **kwargs)
+
+    def test_behind_upstream_without_an_issue_creates_one(self):
+        self.release("v1.3.0")
+        self.check()
+        call = self.assert_only_write("issue create")
+        self.assertEqual(call.flag("--title"), self.title)
+        body = call.flag("--body")
+        for expected in (self.pinned, "v1.3.0", RUN_URL):
+            self.assertIn(expected, body)
+
+    def test_behind_upstream_with_an_open_issue_comments_instead_of_duplicating(self):
+        self.release("v1.3.0")
+        self.existing_issue(31)
+        self.check()
+        call = self.assert_only_write("issue comment")
+        self.assertEqual(call.argv[2], "31")
+        self.assertIn(RUN_URL, call.flag("--body"))
+
+    def test_lookup_matches_the_title_exactly(self):
+        self.release("v1.3.0")
+        self.fixture("issues.json", [{"number": 8, "title": f"{self.title} (old)"}, {"number": 9, "title": self.title}])
+        self.check()
+        self.assertEqual(self.assert_only_write("issue comment").argv[2], "9")
+
+    def test_matching_scheduled_check_closes_the_open_issue(self):
+        self.existing_issue(31)
+        self.check("schedule")
+        call = self.assert_only_write("issue close")
+        self.assertEqual(call.argv[2], "31")
+        self.assertIn(RUN_URL, call.flag("--comment"))
+
+    def test_matching_manual_dispatch_never_closes_the_issue(self):
+        self.existing_issue(31)
+        self.check("workflow_dispatch")
+        self.assert_no_write()
+
+    def test_matching_without_an_issue_writes_nothing(self):
+        self.check("schedule")
+        self.assert_no_write()
+
+    def test_unreadable_formula_fails_the_step(self):
+        self.write_formula('  sha256 "abc"\n')
+        proc = self.check(check=False)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assert_no_write()
+
+
+class CruxCheckUpstreamTests(CheckUpstreamBase):
+    workflow = "crux.yml"
+    formula = "crux"
+
+    def url(self, tag: str) -> str:
+        return f"https://github.com/hivecommons/crux/releases/download/{tag}/crux_{tag[1:]}_darwin_arm64.tar.gz"
+
+
+class HotshotCheckUpstreamTests(CheckUpstreamBase):
+    workflow = "hotshot.yml"
+    formula = "hotshot"
+
+    def url(self, tag: str) -> str:
+        return f"https://github.com/hivecommons/hotshot/archive/refs/tags/{tag}.tar.gz"
+
+
+del TrackingIssueStepBase, TrackingIssueContract, NotifyFailureBase, UpstreamNotifyFailureBase, CheckUpstreamBase
 
 
 if __name__ == "__main__":
