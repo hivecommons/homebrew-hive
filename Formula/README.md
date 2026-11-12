@@ -33,6 +33,8 @@ edits to `contribute*.rb`.
 
 ## Hand-maintained formulae (`hotshot.rb`, `crux.rb`)
 
+Weekly and manually dispatched checks open or update a tracking issue when either formula differs from its latest upstream release; a matching scheduled check closes it.
+
 To bump `hotshot` to a new upstream tag `vX.Y.Z`:
 
 1. Confirm the tag and GitHub Release exist upstream.
