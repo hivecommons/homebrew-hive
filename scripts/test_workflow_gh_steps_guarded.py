@@ -148,7 +148,7 @@ class WorkflowGhStepsGuardedTests(unittest.TestCase):
         - name: Run with single-quoted inline
           run: 'gh pr comment 1 --body "single-quoted inline"'
         - name: Non-gh step
-          run: echo "not a gh step"
+          run: echo "plain shell step"
 """
         steps = run_steps_from_text(synthetic_workflow)
         
