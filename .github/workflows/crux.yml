@@ -105,7 +105,7 @@ jobs:
           fi
 
   notify-failure:
-    needs: [crux]
+    needs: [crux, check-upstream]
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -117,20 +117,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RESULT: ${{ needs.crux.result }}
+          UPSTREAM_RESULT: ${{ needs.check-upstream.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           title="crux formula failing"
           existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
             --jq "[.[] | select(.title == \"$title\")][0].number // empty")
-          if [ "$RESULT" = failure ]; then
-            body="The \`${GITHUB_WORKFLOW}\` run failed (crux: ${RESULT}): ${RUN_URL}"
+          if [ "$RESULT" = failure ] || [ "$UPSTREAM_RESULT" = failure ]; then
+            body="The \`${GITHUB_WORKFLOW}\` run failed (crux: ${RESULT}, check-upstream: ${UPSTREAM_RESULT}): ${RUN_URL}"
             if [ -n "$existing" ]; then
               gh issue comment "$existing" --body "$body"
             else
               gh issue create --title "$title" \
-                --body "$body"$'\n\n'"Formula/crux.rb no longer installs on the current runners; check the hivecommons/crux release assets it points at, then see the hotshot section of runbooks/rollback.md (the crux procedure is its last paragraph). This issue closes automatically when a later scheduled run succeeds."
+                --body "$body"$'\n\n'"Check the failed job. For installation failures, check the hivecommons/crux release assets, then see the hotshot section of runbooks/rollback.md (the crux procedure is its last paragraph). This issue closes automatically when a later scheduled run succeeds."
             fi
-          elif [ "$RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
+          elif [ "$RESULT" = success ] && [ "$UPSTREAM_RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
             gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
           fi

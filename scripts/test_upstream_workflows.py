@@ -52,8 +52,10 @@ class UpstreamCheckTests(unittest.TestCase):
             return result, [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
 
     def test_drift_lifecycle(self):
-        for name, pinned in [('crux', 'v0.4.0'), ('hotshot', 'v0.2.0')]:
+        for name in ('crux', 'hotshot'):
             with self.subTest(name=name):
+                formula = (ROOT / 'Formula' / f'{name}.rb').read_text()
+                pinned = re.search(r'/(v\d+\.\d+\.\d+)(?:/|\.tar\.gz")', formula).group(1)
                 job, _ = workflow(name)
                 self.assertIn("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'", job)
                 for existing, action in [('', 'create'), ('42', 'comment')]:

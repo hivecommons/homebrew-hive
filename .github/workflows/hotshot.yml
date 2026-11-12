@@ -93,7 +93,7 @@ jobs:
   # must reach a human: mirror convert.yml's notify-failure job and keep one
   # tracking issue open until a later scheduled run goes green.
   notify-failure:
-    needs: [hotshot]
+    needs: [hotshot, check-upstream]
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -105,20 +105,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RESULT: ${{ needs.hotshot.result }}
+          UPSTREAM_RESULT: ${{ needs.check-upstream.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           title="hotshot formula failing"
           existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
             --jq "[.[] | select(.title == \"$title\")][0].number // empty")
-          if [ "$RESULT" = failure ]; then
-            body="The \`${GITHUB_WORKFLOW}\` run failed (hotshot: ${RESULT}): ${RUN_URL}"
+          if [ "$RESULT" = failure ] || [ "$UPSTREAM_RESULT" = failure ]; then
+            body="The \`${GITHUB_WORKFLOW}\` run failed (hotshot: ${RESULT}, check-upstream: ${UPSTREAM_RESULT}): ${RUN_URL}"
             if [ -n "$existing" ]; then
               gh issue comment "$existing" --body "$body"
             else
               gh issue create --title "$title" \
-                --body "$body"$'\n\n'"Formula/hotshot.rb no longer builds from source on the current macOS runner; see the hotshot section of runbooks/rollback.md. This issue closes automatically when a later scheduled run succeeds."
+                --body "$body"$'\n\n'"Check the failed job. For build failures, see the hotshot section of runbooks/rollback.md. This issue closes automatically when a later scheduled run succeeds."
             fi
-          elif [ "$RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
+          elif [ "$RESULT" = success ] && [ "$UPSTREAM_RESULT" = success ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ -n "$existing" ]; then
             gh issue close "$existing" --comment "Scheduled run succeeded: ${RUN_URL}"
           fi
