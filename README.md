@@ -28,6 +28,15 @@ runtime from Hive:
 brew install hivecommons/hive/crux
 ```
 
+and, as a cask, [Quorum Companion](https://github.com/hivecommons/quorum-companion),
+the macOS desktop companion that lets hive's Betty listen to your own meeting
+app after you confirm the participants were told (ad-hoc signed: approve it
+once under System Settings, Privacy & Security, Open Anyway):
+
+```sh
+brew install --cask hivecommons/hive/quorum-companion
+```
+
 The contribute formula exists so that contributing to a Hive does not require cloning a repository
 first. The formula wraps the published `ghcr.io/hivecommons/hive-contributor`
 container image, converted to a self-contained [Apptainer](https://apptainer.org)
