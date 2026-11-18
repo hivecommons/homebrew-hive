@@ -54,6 +54,28 @@ jobs:
           hive-contribute --help
           brew test hivecommons/hive/contribute
 
+  cask:
+    # Casks are macOS-only, so they cannot be audited on the Linux formula job.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Audit casks
+        run: |
+          set -euo pipefail
+          brew tap hivecommons/hive "$PWD"
+          # Homebrew now refuses to load casks from non-official taps until trusted.
+          brew trust hivecommons/hive 2>/dev/null || true
+          ruby -c Casks/*.rb
+          brew style Casks/*.rb
+          # audit --cask downloads the archive and checks it against the pinned sha256.
+          for cask_path in Casks/*.rb; do
+            cask_name=$(basename "$cask_path" .rb)
+            brew audit --cask --strict "hivecommons/hive/${cask_name}"
+          done
+
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
