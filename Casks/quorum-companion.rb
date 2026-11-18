@@ -13,7 +13,7 @@ cask "quorum-companion" do
   end
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Quorum Companion.app"
 
