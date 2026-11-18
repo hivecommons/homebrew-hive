@@ -158,3 +158,52 @@ formula: it is detected by the `crux formula` workflow (macOS and Linux) or
 `brew reinstall hivecommons/hive/crux`. Its `url` lines point at prebuilt
 release archives rather than a source tarball, so confirm all four restored
 URLs still return 200.
+
+## Rolling back `quorum-companion` (hand-maintained cask)
+
+`Casks/quorum-companion.rb` is the only cask in the tap. Like `hotshot` and
+`crux` it is not generated, so Options A and B above do not apply. A bad
+cask is a bad `version`/`sha256` bump merged to `main`, or an upstream release
+whose app bundle is broken. `url` is derived from `version`, so a bump changes
+the download in one line.
+
+Impact: new installs and `brew upgrade --cask` download the bad
+`QuorumCompanion-<version>-macos-arm64.zip`. Installed copies keep working
+until upgraded.
+
+1. Detect: no workflow in this tap builds or audits the cask (`Tap CI` runs
+   `brew style` and `brew audit` on `Formula/*.rb` only), so detection is a
+   user report, an upstream report from `hivecommons/quorum-companion`, or a
+   local `brew audit --cask --strict hivecommons/hive/quorum-companion`.
+2. Revert the bump commit and open a PR against `main`:
+
+   ```sh
+   git switch -c revert-quorum-companion-<bad-version> origin/main
+   git revert --no-edit <bad-merge-commit>
+   git commit --amend -s --no-edit
+   git push origin HEAD
+   ```
+
+3. Before merging (needs a maintainer), confirm the restored archive is still
+   served and still matches the pinned checksum:
+
+   ```sh
+   curl -sIL "<restored-url>" | head -n 1        # expect HTTP 200
+   curl -sL "<restored-url>" | shasum -a 256     # must equal the restored sha256
+   ```
+
+4. Users who already installed the bad version have a higher version than the
+   restored cask, so `brew upgrade` will not downgrade them:
+
+   ```sh
+   brew update
+   brew reinstall --cask hivecommons/hive/quorum-companion
+   ```
+
+   The app is ad-hoc signed, so macOS may ask again for Open Anyway and for the
+   Microphone and Screen & System Audio Recording permissions after the
+   reinstall; this is expected, not part of the fault.
+
+If the bad release is upstream's fault, fix or re-release upstream and bump
+forward: change `version` and `sha256` together in one commit. Record the
+incident with [postmortem-template.md](postmortem-template.md).
