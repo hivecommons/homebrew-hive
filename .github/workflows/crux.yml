@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v brew >/dev/null 2>&1; then
-            NONINTERACTIVE=1 CI=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            NONINTERACTIVE=1 CI=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/eaa2af62ca1d5349c9743f82b1b0c4e5d365fb2d/install.sh)" # pinned 2026-11-18
           fi
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
           echo "/home/linuxbrew/.linuxbrew/sbin" >> "$GITHUB_PATH"
