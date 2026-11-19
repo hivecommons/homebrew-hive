@@ -87,6 +87,7 @@ and ownership is tracked per file in [`Formula/README.md`](Formula/README.md):
 | `contribute` | `hive-contribute` | generated from the `hive-contributor` image | `convert.yml` |
 | `hotshot` | `hotshot` | `swift build -c release` of the tagged [hivecommons/hotshot](https://github.com/hivecommons/hotshot) tarball (macOS 13+, Xcode 15+) | pull requests |
 | `crux` | `crux` | prebuilt release binaries from [hivecommons/crux](https://github.com/hivecommons/crux) (darwin/linux × arm64/amd64) | pull requests |
+| `quorum-companion` (cask, in `Casks/`) | `Quorum Companion.app` | prebuilt arm64 macOS zip from [hivecommons/quorum-companion](https://github.com/hivecommons/quorum-companion) releases | pull requests |
 
 The generator writes and stages only `Formula/<formula>.rb` for the channel it
 converts, and `convert.yml` fails if a run modifies any other file under

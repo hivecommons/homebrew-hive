@@ -11,6 +11,7 @@ must live here. Ownership is therefore split **per file**, not per directory:
 | `contribute-candidate.rb` (when generated) | generator | Same pipeline, `candidate` channel, installs `hive-contribute-candidate`. **Do not hand-edit.** |
 | `hotshot.rb` | hand-maintained | Edited by pull request. Builds [hivecommons/hotshot](https://github.com/hivecommons/hotshot) from its tagged source tarball. |
 | `crux.rb` | hand-maintained | Edited by pull request. Installs the prebuilt `crux` binary from a [hivecommons/crux](https://github.com/hivecommons/crux) GitHub release (darwin/linux × arm64/amd64). |
+| `../Casks/quorum-companion.rb` | hand-maintained | Not a formula: casks live in `Casks/`. Edited by pull request. Installs the prebuilt macOS app zip from a [hivecommons/quorum-companion](https://github.com/hivecommons/quorum-companion) GitHub release. See [Bumping the cask](#bumping-the-quorum-companion-cask). |
 | `README.md` | hand-maintained | This file. |
 
 The generator writes only `Formula/<formula>.rb` for the channel it is
@@ -61,3 +62,19 @@ To bump `crux` to a new upstream tag `vX.Y.Z`:
    `brew tap hivecommons/hive "$PWD" && brew audit --strict --new hivecommons/hive/crux && brew install hivecommons/hive/crux && brew test hivecommons/hive/crux`.
 5. Open a PR. `.github/workflows/crux.yml` repeats step 4 on macOS and
    Linux; `Tap CI` styles and audits it.
+
+## Bumping the `quorum-companion` cask
+
+The cask has no scheduled upstream-drift check; bump it by hand when a new
+release is published. For a new upstream tag `vX.Y.Z`:
+
+1. Confirm the tag and GitHub Release exist at hivecommons/quorum-companion and
+   carry `QuorumCompanion-X.Y.Z-macos-arm64.zip`.
+2. Compute the archive checksum:
+   `curl -sL https://github.com/hivecommons/quorum-companion/releases/download/vX.Y.Z/QuorumCompanion-X.Y.Z-macos-arm64.zip | shasum -a 256`
+3. Update `version` and `sha256` in `Casks/quorum-companion.rb` (the `url`
+   interpolates `version`). Update the macOS floor in `depends_on` and the
+   caveats text if upstream raised it.
+4. Open a PR. The `cask` job in `Tap CI` runs `brew style` and
+   `brew audit --cask --strict` on a macOS runner, which downloads the archive
+   and checks it against the pinned `sha256`.
