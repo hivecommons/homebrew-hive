@@ -1,6 +1,6 @@
 cask "quorum-companion" do
-  version "0.1.0"
-  sha256 "3fb3146f295965b7727a2750293338a212103c7bb2fc8ede6d096c65250b7b90"
+  version "0.2.0"
+  sha256 "1dc23bee85d8918c4f3ea5b9ac9cd17d4e04e6fe63d7e3026382bfa52592824b"
 
   url "https://github.com/hivecommons/quorum-companion/releases/download/v#{version}/QuorumCompanion-#{version}-macos-arm64.zip"
   name "Quorum Companion"
